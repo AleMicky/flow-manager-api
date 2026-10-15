@@ -38,6 +38,14 @@ export class WorkflowAction {
   @Column({ type: 'integer', default: 0 })
   sortOrder!: number;
 
+  @Column({
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  businessStatus!: string | null;
+
+
   @CreateDateColumn()
   createdAt!: Date;
 

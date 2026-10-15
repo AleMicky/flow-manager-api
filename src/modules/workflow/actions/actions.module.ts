@@ -7,12 +7,22 @@ import { ActionsService } from './actions.service.js';
 import { TaskActionExecutor } from './executors/task-action.executor.js';
 import { FormsModule } from '../forms/forms.module.js';
 import { TasksModule } from '../tasks/tasks.module.js';
+import { WorkflowActionExecution } from './entities/workflow-action-execution.entity.js';
+import { SolicitudesModule } from '../../compras/solicitudes/solicitudes.module.js';
+import { WorkflowExecutionService } from './services/workflow-execution.service.js';
+import { WorkflowBusinessSyncService } from './services/workflow-business-sync.service.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkflowAction]),
-    FlowableModule, FormsModule, TasksModule],
+  imports: [TypeOrmModule.forFeature([WorkflowAction, WorkflowActionExecution]),
+    FlowableModule, FormsModule, TasksModule, SolicitudesModule],
   controllers: [ActionsController],
-  providers: [ActionsService, TaskActionExecutor],
-  exports: [ActionsService, TaskActionExecutor],
+  providers: [ActionsService, TaskActionExecutor, WorkflowExecutionService,
+    WorkflowBusinessSyncService,
+    WorkflowExecutionService,],
+  exports: [
+    ActionsService,
+    TaskActionExecutor,
+    WorkflowExecutionService,
+  ],
 })
 export class ActionsModule { }
