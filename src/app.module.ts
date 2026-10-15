@@ -11,6 +11,7 @@ import flowableConfig from './config/flowable.config.js';
 import { WorkflowModule } from './modules/workflow/workflow.module.js';
 import { ComprasModule } from './modules/compras/compras.module.js';
 import { FlowableModule } from './modules/workflow/infrastructure/flowable/flowable.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { FlowableModule } from './modules/workflow/infrastructure/flowable/flowa
     FlowableModule,
     WorkflowModule,
     ComprasModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
