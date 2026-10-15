@@ -1,5 +1,8 @@
 
-import { Injectable } from '@nestjs/common';
+import {
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 
 import { CompraWorkflowSyncService } from '../../../compras/solicitudes/services/compra-workflow-sync.service.js';
 
@@ -13,20 +16,20 @@ export class WorkflowBusinessSyncService {
         processInstanceId: string,
         businessStatus: string | null,
     ): Promise<void> {
-        if (!businessStatus) {
+        // Acciones que no modifican estado de negocio.
+        if (businessStatus === null) {
             return;
         }
 
-        const synchronized =
-            await this.compras.synchronize(
-                processInstanceId,
-                businessStatus,
-            );
+        const synchronized = await this.compras.synchronize(
+            processInstanceId,
+            businessStatus,
+        );
 
         if (!synchronized) {
-            // No se encontró una solicitud de compra.
-            // Por ahora no hay otro adaptador registrado.
-            return;
+            throw new NotFoundException(
+                'No existe una entidad de negocio vinculada al proceso',
+            );
         }
     }
 }

@@ -12,11 +12,19 @@ import { SolicitudesModule } from '../../compras/solicitudes/solicitudes.module.
 import { WorkflowExecutionService } from './services/workflow-execution.service.js';
 import { WorkflowBusinessSyncService } from './services/workflow-business-sync.service.js';
 import { WorkflowReconciliationService } from './services/workflow-reconciliation.service.js';
+import { WorkflowReconciliationController } from './workflow-reconciliation.controller.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkflowAction, WorkflowActionExecution]),
-    FlowableModule, FormsModule, TasksModule, SolicitudesModule],
-  controllers: [ActionsController],
+  imports: [
+    TypeOrmModule.forFeature([WorkflowAction, WorkflowActionExecution]),
+    FlowableModule,
+    FormsModule,
+    TasksModule,
+    SolicitudesModule],
+  controllers: [
+    ActionsController,
+    WorkflowReconciliationController
+  ],
   providers: [
     ActionsService,
     TaskActionExecutor,

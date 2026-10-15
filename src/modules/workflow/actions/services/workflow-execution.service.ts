@@ -2,6 +2,7 @@
 import {
     ConflictException,
     Injectable,
+    NotFoundException,
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
@@ -98,6 +99,31 @@ export class WorkflowExecutionService {
 
     async getById(id: string) {
         return this.repository.findOneByOrFail({ id });
+    }
+
+    async findOne(id: string): Promise<WorkflowActionExecution> {
+        const execution = await this.repository.findOneBy({ id });
+
+        if (!execution) {
+            throw new NotFoundException(
+                'Ejecución de workflow no encontrada',
+            );
+        }
+
+        return execution;
+    }
+
+    async updateStatusIfCurrent(
+        id: string,
+        current: WorkflowExecutionStatus,
+        next: WorkflowExecutionStatus,
+    ): Promise<boolean> {
+        const result = await this.repository.update(
+            { id, status: current },
+            { status: next },
+        );
+
+        return result.affected === 1;
     }
 
 }
