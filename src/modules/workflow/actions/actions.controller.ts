@@ -1,20 +1,15 @@
-
 import {
-    Body,
-    Controller,
-    Get,
-    HttpCode,
-    HttpStatus,
-    Param,
-    Post,
-    Query,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
 } from '@nestjs/common';
 
-import {
-    ApiOperation,
-    ApiQuery,
-    ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { ActionsService } from './actions.service.js';
 import { CreateActionDto } from './dto/create-action.dto.js';
@@ -24,58 +19,52 @@ import { ExecuteActionDto } from './dto/execute-action.dto.js';
 @ApiTags('Workflow - Actions')
 @Controller('workflow/actions')
 export class ActionsController {
-    constructor(
-        private readonly service: ActionsService,
-        private readonly executor: TaskActionExecutor,
+  constructor(
+    private readonly service: ActionsService,
+    private readonly executor: TaskActionExecutor,
+  ) {}
 
-    ) { }
+  @Post()
+  @ApiOperation({
+    summary: 'Configurar una acción BPMN',
+  })
+  create(@Body() dto: CreateActionDto) {
+    return this.service.create(dto);
+  }
 
-    @Post()
-    @ApiOperation({
-        summary: 'Configurar una acción BPMN',
-    })
-    create(@Body() dto: CreateActionDto) {
-        return this.service.create(dto);
-    }
+  @Get()
+  @ApiOperation({
+    summary: 'Listar acciones de una tarea BPMN',
+  })
+  @ApiQuery({ name: 'processDefinitionId' })
+  @ApiQuery({ name: 'taskDefinitionKey' })
+  findByTask(
+    @Query('processDefinitionId')
+    processDefinitionId: string,
+    @Query('taskDefinitionKey')
+    taskDefinitionKey: string,
+  ) {
+    return this.service.findByTask(processDefinitionId, taskDefinitionKey);
+  }
 
-    @Get()
-    @ApiOperation({
-        summary: 'Listar acciones de una tarea BPMN',
-    })
-    @ApiQuery({ name: 'processDefinitionId' })
-    @ApiQuery({ name: 'taskDefinitionKey' })
-    findByTask(
-        @Query('processDefinitionId')
-        processDefinitionId: string,
-        @Query('taskDefinitionKey')
-        taskDefinitionKey: string,
-    ) {
-        return this.service.findByTask(
-            processDefinitionId,
-            taskDefinitionKey,
-        );
-    }
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Consultar una acción configurada',
+  })
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
 
-    @Get(':id')
-    @ApiOperation({
-        summary: 'Consultar una acción configurada',
-    })
-    findOne(@Param('id') id: string) {
-        return this.service.findOne(id);
-    }
-
-
-    @Post('tasks/:taskId/actions/:actionId/execute')
-    @HttpCode(HttpStatus.OK)
-    @ApiOperation({
-        summary: 'Ejecutar una acción configurada de una tarea BPMN',
-    })
-    execute(
-        @Param('taskId') taskId: string,
-        @Param('actionId') actionId: string,
-        @Body() dto: ExecuteActionDto,
-    ) {
-        return this.executor.execute(taskId, actionId, dto);
-    }
-
+  @Post('tasks/:taskId/actions/:actionId/execute')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Ejecutar una acción configurada de una tarea BPMN',
+  })
+  execute(
+    @Param('taskId') taskId: string,
+    @Param('actionId') actionId: string,
+    @Body() dto: ExecuteActionDto,
+  ) {
+    return this.executor.execute(taskId, actionId, dto);
+  }
 }

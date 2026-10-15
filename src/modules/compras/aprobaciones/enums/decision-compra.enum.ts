@@ -1,6 +1,5 @@
-
 export enum DecisionCompra {
-    APROBADO = 'APROBADO',
-    RECHAZADO = 'RECHAZADO',
-    OBSERVADO = 'OBSERVADO',
+  APROBADO = 'APROBADO',
+  RECHAZADO = 'RECHAZADO',
+  OBSERVADO = 'OBSERVADO',
 }

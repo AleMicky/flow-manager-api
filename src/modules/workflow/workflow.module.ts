@@ -17,11 +17,6 @@ import { FormsModule } from './forms/forms.module.js';
     ActionsModule,
     FormsModule,
   ],
-  exports: [
-    DefinitionsModule,
-    InstancesModule,
-    TasksModule,
-    HistoryModule,
-  ],
+  exports: [DefinitionsModule, InstancesModule, TasksModule, HistoryModule],
 })
-export class WorkflowModule { }
+export class WorkflowModule {}

@@ -4,15 +4,10 @@ import { AprobacionesService } from './aprobaciones.service.js';
 import { FlowableModule } from '../../workflow/infrastructure/flowable/flowable.module.js';
 import { SolicitudesModule } from '../solicitudes/solicitudes.module.js';
 
-
-
 @Module({
-  imports: [
-    FlowableModule,
-    SolicitudesModule,
-  ],
+  imports: [FlowableModule, SolicitudesModule],
   controllers: [AprobacionesController],
   providers: [AprobacionesService],
   exports: [AprobacionesService],
 })
-export class AprobacionesModule { }
+export class AprobacionesModule {}

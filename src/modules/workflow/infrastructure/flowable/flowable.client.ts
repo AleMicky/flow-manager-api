@@ -60,11 +60,7 @@ export class FlowableClient {
     );
   }
 
-
-  async delete<T>(
-    url: string,
-    params?: Record<string, unknown>,
-  ): Promise<T> {
+  async delete<T>(url: string, params?: Record<string, unknown>): Promise<T> {
     try {
       const response = await this.http.delete<T>(url, {
         params,
@@ -75,5 +71,4 @@ export class FlowableClient {
       return this.handleError(error);
     }
   }
-
 }

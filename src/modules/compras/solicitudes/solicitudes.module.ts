@@ -6,12 +6,9 @@ import { SolicitudCompra } from './entities/solicitud-compra.entity.js';
 import { FlowableModule } from '../../workflow/infrastructure/flowable/flowable.module.js';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([SolicitudCompra]),
-    FlowableModule,
-  ],
+  imports: [TypeOrmModule.forFeature([SolicitudCompra]), FlowableModule],
   controllers: [SolicitudesController],
   providers: [SolicitudesService],
   exports: [SolicitudesService],
 })
-export class SolicitudesModule { }
+export class SolicitudesModule {}

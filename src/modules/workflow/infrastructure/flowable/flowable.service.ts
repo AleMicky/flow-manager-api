@@ -3,7 +3,7 @@ import { FlowableClient } from './flowable.client.js';
 
 @Injectable()
 export class FlowableService {
-  constructor(private readonly client: FlowableClient) { }
+  constructor(private readonly client: FlowableClient) {}
 
   getDefinitions<T = unknown>(params?: Record<string, unknown>): Promise<T> {
     return this.client.get<T>('/repository/process-definitions', params);
@@ -28,9 +28,10 @@ export class FlowableService {
     });
   }
 
-
-
-  completeTask<T = unknown>(taskId: string, variables: Record<string, unknown> = {}): Promise<T> {
+  completeTask<T = unknown>(
+    taskId: string,
+    variables: Record<string, unknown> = {},
+  ): Promise<T> {
     return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
       action: 'complete',
       variables: Object.entries(variables).map(([name, value]) => ({
@@ -50,14 +51,8 @@ export class FlowableService {
     );
   }
 
-
-  getInstancesFiltered<T>(
-    params: Record<string, unknown>,
-  ): Promise<T> {
-    return this.client.get<T>(
-      '/runtime/process-instances',
-      params,
-    );
+  getInstancesFiltered<T>(params: Record<string, unknown>): Promise<T> {
+    return this.client.get<T>('/runtime/process-instances', params);
   }
 
   getInstanceById<T>(id: string): Promise<T> {
@@ -66,99 +61,60 @@ export class FlowableService {
     );
   }
 
-  deleteInstance(
-    id: string,
-    reason: string,
-  ): Promise<void> {
+  deleteInstance(id: string, reason: string): Promise<void> {
     return this.client.delete<void>(
       `/runtime/process-instances/${encodeURIComponent(id)}`,
       { deleteReason: reason },
     );
   }
 
-
   // ==========================================
   // TASKS
   // ==========================================
 
-  getTasks<T>(
-    params?: Record<string, unknown>,
-  ): Promise<T> {
-    return this.client.get<T>(
-      '/runtime/tasks',
-      params,
-    );
+  getTasks<T>(params?: Record<string, unknown>): Promise<T> {
+    return this.client.get<T>('/runtime/tasks', params);
   }
 
   getTaskById<T>(taskId: string): Promise<T> {
-    return this.client.get<T>(
-      `/runtime/tasks/${encodeURIComponent(taskId)}`,
-    );
+    return this.client.get<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`);
   }
 
-  claimTask<T>(
-    taskId: string,
-    assignee: string,
-  ): Promise<T> {
-    return this.client.post<T>(
-      `/runtime/tasks/${encodeURIComponent(taskId)}`,
-      {
-        action: 'claim',
-        assignee,
-      },
-    );
+  claimTask<T>(taskId: string, assignee: string): Promise<T> {
+    return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
+      action: 'claim',
+      assignee,
+    });
   }
 
   unclaimTask<T>(taskId: string): Promise<T> {
-    return this.client.post<T>(
-      `/runtime/tasks/${encodeURIComponent(taskId)}`,
-      {
-        action: 'claim',
-        assignee: null,
-      },
-    );
+    return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
+      action: 'claim',
+      assignee: null,
+    });
   }
-
 
   // ==========================================
   // HISTORY
   // ==========================================
 
-  getHistoricProcesses<T>(
-    params?: Record<string, unknown>,
-  ): Promise<T> {
-    return this.client.get<T>(
-      '/history/historic-process-instances',
-      params,
-    );
+  getHistoricProcesses<T>(params?: Record<string, unknown>): Promise<T> {
+    return this.client.get<T>('/history/historic-process-instances', params);
   }
 
-  getHistoricProcessById<T>(
-    id: string,
-  ): Promise<T> {
+  getHistoricProcessById<T>(id: string): Promise<T> {
     return this.client.get<T>(
       `/history/historic-process-instances/${encodeURIComponent(id)}`,
     );
   }
 
-  getHistoricTasks<T>(
-    params?: Record<string, unknown>,
-  ): Promise<T> {
-    return this.client.get<T>(
-      '/history/historic-task-instances',
-      params,
-    );
+  getHistoricTasks<T>(params?: Record<string, unknown>): Promise<T> {
+    return this.client.get<T>('/history/historic-task-instances', params);
   }
 
-  getHistoricTaskById<T>(
-    id: string,
-  ): Promise<T> {
+  getHistoricTaskById<T>(id: string): Promise<T> {
     return this.client.get<T>(
       `/history/historic-task-instances/${encodeURIComponent(id)}`,
     );
   }
-
-
-
-
 }

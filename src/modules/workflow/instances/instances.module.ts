@@ -9,4 +9,4 @@ import { FlowableModule } from '../infrastructure/flowable/flowable.module.js';
   providers: [InstancesService],
   exports: [InstancesService],
 })
-export class InstancesModule { }
+export class InstancesModule {}

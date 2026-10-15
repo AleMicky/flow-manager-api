@@ -6,4 +6,4 @@ import { AprobacionesModule } from './aprobaciones/aprobaciones.module.js';
   imports: [SolicitudesModule, AprobacionesModule],
   exports: [SolicitudesModule, AprobacionesModule],
 })
-export class ComprasModule { }
+export class ComprasModule {}
