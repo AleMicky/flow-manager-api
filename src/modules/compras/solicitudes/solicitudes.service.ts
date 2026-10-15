@@ -89,4 +89,17 @@ export class SolicitudesService {
 
         return this.repository.save(solicitud);
     }
+
+
+    async actualizarEstado(
+        id: string,
+        estado: EstadoSolicitudCompra,
+    ): Promise<SolicitudCompra> {
+        const solicitud = await this.findOne(id);
+
+        solicitud.estado = estado;
+
+        return this.repository.save(solicitud);
+    }
+
 }
