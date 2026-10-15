@@ -18,13 +18,17 @@ import {
 
 import { TasksService } from './tasks.service.js';
 import { QueryTasksDto } from './dto/query-tasks.dto.js';
-import { ClaimTaskDto } from './dto/claim-task.dto.js';
 import { CompleteTaskDto } from './dto/complete-task.dto.js';
+import { TaskAuthorizationService } from './services/task-authorization.service.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
+import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @ApiTags('Workflow - Tasks')
 @Controller('workflow/tasks')
 export class TasksController {
-  constructor(private readonly tasksService: TasksService) {}
+  constructor(private readonly tasksService: TasksService,
+    private readonly authorization: TaskAuthorizationService,
+  ) { }
 
   @Get()
   @ApiOperation({
@@ -43,25 +47,30 @@ export class TasksController {
     return this.tasksService.findOne(id);
   }
 
+
   @Post(':id/claim')
-  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Reclamar una tarea',
+    summary: 'Reclamar tarea como usuario autenticado',
   })
-  @ApiNoContentResponse()
-  claim(@Param('id') id: string, @Body() dto: ClaimTaskDto) {
-    return this.tasksService.claim(id, dto);
+  claim(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.authorization.claim(id, user);
   }
 
   @Post(':id/unclaim')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Liberar una tarea',
+    summary: 'Liberar tarea propia',
   })
-  @ApiNoContentResponse()
-  unclaim(@Param('id') id: string) {
-    return this.tasksService.unclaim(id);
+  unclaim(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.authorization.unclaim(id, user);
   }
+
 
   @Post(':id/complete')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -72,4 +81,6 @@ export class TasksController {
   complete(@Param('id') id: string, @Body() dto: CompleteTaskDto) {
     return this.tasksService.complete(id, dto);
   }
+
+
 }

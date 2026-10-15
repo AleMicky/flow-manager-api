@@ -9,7 +9,8 @@ import { FormsModule } from '../forms/forms.module.js';
 import { TasksModule } from '../tasks/tasks.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkflowAction]), FlowableModule, FormsModule, TasksModule],
+  imports: [TypeOrmModule.forFeature([WorkflowAction]),
+    FlowableModule, FormsModule, TasksModule],
   controllers: [ActionsController],
   providers: [ActionsService, TaskActionExecutor],
   exports: [ActionsService, TaskActionExecutor],

@@ -1,16 +1,20 @@
 
 import {
+    ConflictException,
     ForbiddenException,
     Injectable,
 } from '@nestjs/common';
 
 import { FlowableService } from '../../infrastructure/flowable/flowable.service.js';
+
 import type { AuthUser } from '../../../auth/interfaces/auth-user.interface.js';
 
-interface FlowableTask {
+export interface FlowableTask {
     id: string;
+    name: string;
     assignee: string | null;
     processInstanceId: string | null;
+    processDefinitionId: string | null;
     taskDefinitionKey: string | null;
 }
 
@@ -26,52 +30,98 @@ export class TaskAuthorizationService {
         private readonly flowable: FlowableService,
     ) { }
 
-    async assertCanExecute(
+    private async getTask(
+        taskId: string,
+    ): Promise<FlowableTask> {
+        return this.flowable.getTaskById<FlowableTask>(taskId);
+    }
+
+    private async isCandidate(
         taskId: string,
         user: AuthUser,
-    ): Promise<FlowableTask> {
-        const task =
-            await this.flowable.getTaskById<FlowableTask>(taskId);
-
-        // Identificador que ambos sistemas deben compartir.
-        const userId = user.id;
-
-        // Si la tarea está asignada, solo su responsable
-        // puede ejecutarla.
-        if (task.assignee) {
-            if (task.assignee !== userId) {
-                throw new ForbiddenException(
-                    'La tarea está asignada a otro usuario',
-                );
-            }
-
-            return task;
-        }
-
-        // Consultar candidatos de Flowable.
+    ): Promise<boolean> {
         const links =
             await this.flowable.getTaskIdentityLinks<
                 IdentityLink[]
             >(taskId);
 
-        const candidateUser = links.some(
-            (link) =>
-                link.type === 'candidate' &&
-                link.userId === userId,
-        );
+        return links.some((link) => {
+            if (link.type !== 'candidate') {
+                return false;
+            }
 
-        // Requiere que los grupos de Flowable coincidan
-        // con los roles de cliente de Keycloak.
-        const candidateGroup = links.some(
-            (link) =>
-                link.type === 'candidate' &&
+            if (link.userId === user.id) {
+                return true;
+            }
+
+            return (
                 link.groupId !== null &&
-                user.roles.includes(link.groupId),
+                user.roles.includes(link.groupId)
+            );
+        });
+    }
+
+    async claim(
+        taskId: string,
+        user: AuthUser,
+    ): Promise<FlowableTask> {
+        const task = await this.getTask(taskId);
+
+        if (task.assignee === user.id) {
+            return task;
+        }
+
+        if (task.assignee) {
+            throw new ConflictException(
+                'La tarea ya fue reclamada por otro usuario',
+            );
+        }
+
+        const allowed = await this.isCandidate(
+            taskId,
+            user,
         );
 
-        if (!candidateUser && !candidateGroup) {
+        if (!allowed) {
             throw new ForbiddenException(
-                'No estás autorizado para ejecutar esta tarea',
+                'No eres candidato para esta tarea',
+            );
+        }
+
+        // Flowable realiza la reclamación.
+        // Si otro usuario se adelanta, debe devolver 409.
+        await this.flowable.claimTask<unknown>(
+            taskId,
+            user.id,
+        );
+
+        return this.getTask(taskId);
+    }
+
+    async unclaim(
+        taskId: string,
+        user: AuthUser,
+    ): Promise<void> {
+        const task = await this.getTask(taskId);
+
+        if (task.assignee !== user.id) {
+            throw new ForbiddenException(
+                'Solo el asignado puede liberar la tarea',
+            );
+        }
+
+        await this.flowable.unclaimTask<unknown>(taskId);
+    }
+
+    async assertCanExecute(
+        taskId: string,
+        user: AuthUser,
+    ): Promise<FlowableTask> {
+        const task = await this.getTask(taskId);
+
+        if (task.assignee !== user.id) {
+            throw new ForbiddenException(
+                'Debes reclamar la tarea antes de ejecutarla',
             );
         }
 

@@ -1,3 +1,4 @@
+
 import {
   BadRequestException,
   ConflictException,
@@ -5,40 +6,43 @@ import {
 } from '@nestjs/common';
 
 import { FlowableService } from '../../infrastructure/flowable/flowable.service.js';
-import { ActionsService } from '../actions.service.js';
-import { ExecuteActionDto } from '../dto/execute-action.dto.js';
+
+import { TaskAuthorizationService } from '../../tasks/services/task-authorization.service.js';
+
 import { TaskFormService } from '../../forms/services/task-form.service.js';
 
-interface FlowableTask {
-  id: string;
-  name: string;
-  assignee: string | null;
-  processDefinitionId: string;
-  processInstanceId: string;
-  taskDefinitionKey: string;
-}
+import { ActionsService } from '../actions.service.js';
+import { ExecuteActionDto } from '../dto/execute-action.dto.js';
+
+import type { AuthUser } from '../../../auth/interfaces/auth-user.interface.js';
 
 @Injectable()
 export class TaskActionExecutor {
   constructor(
     private readonly flowable: FlowableService,
     private readonly actions: ActionsService,
-    private readonly taskFormService: TaskFormService,
-
+    private readonly authorization: TaskAuthorizationService,
+    private readonly taskForm: TaskFormService,
   ) { }
-
 
   async execute(
     taskId: string,
     actionId: string,
     dto: ExecuteActionDto,
+    user: AuthUser,
   ) {
     const task =
-      await this.flowable.getTaskById<FlowableTask>(taskId);
+      await this.authorization.assertCanExecute(
+        taskId,
+        user,
+      );
 
-    if (!task.processDefinitionId || !task.taskDefinitionKey) {
+    if (
+      !task.processDefinitionId ||
+      !task.taskDefinitionKey
+    ) {
       throw new BadRequestException(
-        'La tarea no pertenece a un proceso BPMN válido',
+        'La tarea no corresponde a una definición BPMN',
       );
     }
 
@@ -51,30 +55,35 @@ export class TaskActionExecutor {
     }
 
     if (
-      action.processDefinitionId !== task.processDefinitionId ||
-      action.taskDefinitionKey !== task.taskDefinitionKey
+      action.processDefinitionId !==
+      task.processDefinitionId ||
+      action.taskDefinitionKey !==
+      task.taskDefinitionKey
     ) {
       throw new BadRequestException(
-        'La acción no corresponde a esta tarea',
+        'La acción no pertenece a esta tarea',
       );
     }
 
     const formData = dto.variables ?? {};
 
-    // Validar los datos del usuario, sin incluir
-    // las variables de decisión configuradas.
-    await this.taskFormService.validateOrThrow(
+    await this.taskForm.validateOrThrow(
       taskId,
       formData,
     );
 
-    // La configuración de la acción tiene prioridad.
-    const variables = {
+    const variables: Record<string, unknown> = {
       ...formData,
       ...action.variables,
     };
 
-    await this.flowable.completeTask<void>(
+    // Segunda comprobación antes de completar.
+    await this.authorization.assertCanExecute(
+      taskId,
+      user,
+    );
+
+    await this.flowable.completeTask<unknown>(
       taskId,
       variables,
     );
@@ -82,9 +91,9 @@ export class TaskActionExecutor {
     return {
       taskId,
       processInstanceId: task.processInstanceId,
+      actionId: action.id,
       action: action.code,
       completed: true,
     };
   }
-
 }

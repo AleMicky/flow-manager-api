@@ -15,6 +15,8 @@ import { ActionsService } from './actions.service.js';
 import { CreateActionDto } from './dto/create-action.dto.js';
 import { TaskActionExecutor } from './executors/task-action.executor.js';
 import { ExecuteActionDto } from './dto/execute-action.dto.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
+import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @ApiTags('Workflow - Actions')
 @Controller('workflow/actions')
@@ -22,7 +24,7 @@ export class ActionsController {
   constructor(
     private readonly service: ActionsService,
     private readonly executor: TaskActionExecutor,
-  ) {}
+  ) { }
 
   @Post()
   @ApiOperation({
@@ -58,13 +60,21 @@ export class ActionsController {
   @Post('tasks/:taskId/actions/:actionId/execute')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Ejecutar una acción configurada de una tarea BPMN',
+    summary: 'Ejecutar acción BPMN autorizada',
   })
   execute(
     @Param('taskId') taskId: string,
     @Param('actionId') actionId: string,
     @Body() dto: ExecuteActionDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.executor.execute(taskId, actionId, dto);
+    return this.executor.execute(
+      taskId,
+      actionId,
+      dto,
+      user,
+    );
   }
+
+
 }
