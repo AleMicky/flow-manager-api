@@ -5,6 +5,7 @@ import { TasksModule } from './tasks/tasks.module.js';
 import { HistoryModule } from './history/history.module.js';
 import { FlowableModule } from './infrastructure/flowable/flowable.module.js';
 import { ActionsModule } from './actions/actions.module.js';
+import { FormsModule } from './forms/forms.module.js';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ActionsModule } from './actions/actions.module.js';
     HistoryModule,
     FlowableModule,
     ActionsModule,
+    FormsModule,
   ],
   exports: [
     DefinitionsModule,
