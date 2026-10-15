@@ -28,9 +28,7 @@ export class FlowableService {
     });
   }
 
-  getTasks<T = unknown>(params?: Record<string, string>): Promise<T> {
-    return this.client.get<T>('/runtime/tasks', params);
-  }
+
 
   completeTask<T = unknown>(taskId: string, variables: Record<string, unknown> = {}): Promise<T> {
     return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
@@ -77,5 +75,51 @@ export class FlowableService {
       { deleteReason: reason },
     );
   }
+
+
+  // ==========================================
+  // TASKS
+  // ==========================================
+
+  getTasks<T>(
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    return this.client.get<T>(
+      '/runtime/tasks',
+      params,
+    );
+  }
+
+  getTaskById<T>(taskId: string): Promise<T> {
+    return this.client.get<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}`,
+    );
+  }
+
+  claimTask<T>(
+    taskId: string,
+    assignee: string,
+  ): Promise<T> {
+    return this.client.post<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}`,
+      {
+        action: 'claim',
+        assignee,
+      },
+    );
+  }
+
+  unclaimTask<T>(taskId: string): Promise<T> {
+    return this.client.post<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}`,
+      {
+        action: 'claim',
+        assignee: null,
+      },
+    );
+  }
+
+
+
 
 }

@@ -13,6 +13,6 @@ import { FlowableModule } from './infrastructure/flowable/flowable.module.js';
     HistoryModule,
     FlowableModule,
   ],
-  exports: [DefinitionsModule, InstancesModule],
+  exports: [DefinitionsModule, InstancesModule, TasksModule],
 })
 export class WorkflowModule { }
