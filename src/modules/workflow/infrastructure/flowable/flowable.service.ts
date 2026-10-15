@@ -3,22 +3,22 @@ import { FlowableClient } from './flowable.client.js';
 
 @Injectable()
 export class FlowableService {
-  constructor(private readonly client: FlowableClient) {}
+  constructor(private readonly client: FlowableClient) { }
 
   getDefinitions<T = unknown>(params?: Record<string, unknown>): Promise<T> {
     return this.client.get<T>('/repository/process-definitions', params);
   }
 
-  getInstances() {
-    return this.client.get('/runtime/process-instances');
+  getInstances<T = unknown>(params?: Record<string, unknown>): Promise<T> {
+    return this.client.get<T>('/runtime/process-instances', params);
   }
 
-  startProcess(
+  startProcess<T = unknown>(
     processDefinitionKey: string,
     variables: Record<string, unknown> = {},
     businessKey?: string,
-  ) {
-    return this.client.post('/runtime/process-instances', {
+  ): Promise<T> {
+    return this.client.post<T>('/runtime/process-instances', {
       processDefinitionKey,
       businessKey,
       variables: Object.entries(variables).map(([name, value]) => ({
@@ -28,12 +28,12 @@ export class FlowableService {
     });
   }
 
-  getTasks(params?: Record<string, string>) {
-    return this.client.get('/runtime/tasks', params);
+  getTasks<T = unknown>(params?: Record<string, string>): Promise<T> {
+    return this.client.get<T>('/runtime/tasks', params);
   }
 
-  completeTask(taskId: string, variables: Record<string, unknown> = {}) {
-    return this.client.post(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
+  completeTask<T = unknown>(taskId: string, variables: Record<string, unknown> = {}): Promise<T> {
+    return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
       action: 'complete',
       variables: Object.entries(variables).map(([name, value]) => ({
         name,
@@ -42,8 +42,8 @@ export class FlowableService {
     });
   }
 
-  getHistory() {
-    return this.client.get('/history/historic-process-instances');
+  getHistory<T = unknown>(): Promise<T> {
+    return this.client.get<T>('/history/historic-process-instances');
   }
 
   getDefinitionById<T>(id: string): Promise<T> {
@@ -51,4 +51,31 @@ export class FlowableService {
       `/repository/process-definitions/${encodeURIComponent(id)}`,
     );
   }
+
+
+  getInstancesFiltered<T>(
+    params: Record<string, unknown>,
+  ): Promise<T> {
+    return this.client.get<T>(
+      '/runtime/process-instances',
+      params,
+    );
+  }
+
+  getInstanceById<T>(id: string): Promise<T> {
+    return this.client.get<T>(
+      `/runtime/process-instances/${encodeURIComponent(id)}`,
+    );
+  }
+
+  deleteInstance(
+    id: string,
+    reason: string,
+  ): Promise<void> {
+    return this.client.delete<void>(
+      `/runtime/process-instances/${encodeURIComponent(id)}`,
+      { deleteReason: reason },
+    );
+  }
+
 }

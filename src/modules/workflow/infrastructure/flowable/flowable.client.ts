@@ -59,4 +59,21 @@ export class FlowableClient {
       'No se pudo completar la operación en Flowable',
     );
   }
+
+
+  async delete<T>(
+    url: string,
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    try {
+      const response = await this.http.delete<T>(url, {
+        params,
+      });
+
+      return response.data;
+    } catch (error) {
+      return this.handleError(error);
+    }
+  }
+
 }
