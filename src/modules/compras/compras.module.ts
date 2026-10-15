@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { SolicitudesModule } from './solicitudes/solicitudes.module.js';
-import { AprobacionesModule } from './aprobaciones/aprobaciones.module.js';
 
 @Module({
-  imports: [SolicitudesModule, AprobacionesModule],
+  imports: [SolicitudesModule],
+  exports: [SolicitudesModule],
 })
-export class ComprasModule {}
+export class ComprasModule { }

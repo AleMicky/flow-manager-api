@@ -120,6 +120,45 @@ export class FlowableService {
   }
 
 
+  // ==========================================
+  // HISTORY
+  // ==========================================
+
+  getHistoricProcesses<T>(
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    return this.client.get<T>(
+      '/history/historic-process-instances',
+      params,
+    );
+  }
+
+  getHistoricProcessById<T>(
+    id: string,
+  ): Promise<T> {
+    return this.client.get<T>(
+      `/history/historic-process-instances/${encodeURIComponent(id)}`,
+    );
+  }
+
+  getHistoricTasks<T>(
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    return this.client.get<T>(
+      '/history/historic-task-instances',
+      params,
+    );
+  }
+
+  getHistoricTaskById<T>(
+    id: string,
+  ): Promise<T> {
+    return this.client.get<T>(
+      `/history/historic-task-instances/${encodeURIComponent(id)}`,
+    );
+  }
+
+
 
 
 }
