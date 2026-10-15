@@ -87,4 +87,17 @@ export class WorkflowExecutionService {
             },
         });
     }
+
+
+    async markSynchronized(id: string) {
+        await this.setStatus(
+            id,
+            WorkflowExecutionStatus.SYNCED,
+        );
+    }
+
+    async getById(id: string) {
+        return this.repository.findOneByOrFail({ id });
+    }
+
 }
