@@ -3,7 +3,7 @@ import { FlowableClient } from './flowable.client.js';
 
 @Injectable()
 export class FlowableService {
-  constructor(private readonly client: FlowableClient) {}
+  constructor(private readonly client: FlowableClient) { }
 
   getDefinitions<T = unknown>(params?: Record<string, unknown>): Promise<T> {
     return this.client.get<T>('/repository/process-definitions', params);
@@ -117,4 +117,14 @@ export class FlowableService {
       `/history/historic-task-instances/${encodeURIComponent(id)}`,
     );
   }
+
+
+  getTaskIdentityLinks<T>(
+    taskId: string,
+  ): Promise<T> {
+    return this.client.get<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks`,
+    );
+  }
+
 }
