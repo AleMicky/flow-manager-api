@@ -3,6 +3,8 @@ import {
     Body,
     Controller,
     Get,
+    HttpCode,
+    HttpStatus,
     Param,
     Post,
     Query,
@@ -16,12 +18,16 @@ import {
 
 import { ActionsService } from './actions.service.js';
 import { CreateActionDto } from './dto/create-action.dto.js';
+import { TaskActionExecutor } from './executors/task-action.executor.js';
+import { ExecuteActionDto } from './dto/execute-action.dto.js';
 
 @ApiTags('Workflow - Actions')
 @Controller('workflow/actions')
 export class ActionsController {
     constructor(
         private readonly service: ActionsService,
+        private readonly executor: TaskActionExecutor,
+
     ) { }
 
     @Post()
@@ -57,4 +63,19 @@ export class ActionsController {
     findOne(@Param('id') id: string) {
         return this.service.findOne(id);
     }
+
+
+    @Post('tasks/:taskId/actions/:actionId/execute')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Ejecutar una acción configurada de una tarea BPMN',
+    })
+    execute(
+        @Param('taskId') taskId: string,
+        @Param('actionId') actionId: string,
+        @Body() dto: ExecuteActionDto,
+    ) {
+        return this.executor.execute(taskId, actionId, dto);
+    }
+
 }

@@ -4,6 +4,7 @@ import { FlowableModule } from '../infrastructure/flowable/flowable.module.js';
 import { WorkflowAction } from './entities/workflow-action.entity.js';
 import { ActionsController } from './actions.controller.js';
 import { ActionsService } from './actions.service.js';
+import { TaskActionExecutor } from './executors/task-action.executor.js';
 
 @Module({
   imports: [
@@ -11,7 +12,7 @@ import { ActionsService } from './actions.service.js';
     FlowableModule,
   ],
   controllers: [ActionsController],
-  providers: [ActionsService],
-  exports: [ActionsService],
+  providers: [ActionsService, TaskActionExecutor],
+  exports: [ActionsService, TaskActionExecutor],
 })
 export class ActionsModule { }
