@@ -97,10 +97,6 @@ export class WorkflowExecutionService {
         );
     }
 
-    async getById(id: string) {
-        return this.repository.findOneByOrFail({ id });
-    }
-
     async findOne(id: string): Promise<WorkflowActionExecution> {
         const execution = await this.repository.findOneBy({ id });
 

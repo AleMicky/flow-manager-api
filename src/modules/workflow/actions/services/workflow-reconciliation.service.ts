@@ -2,6 +2,7 @@
 import {
     ConflictException,
     Injectable,
+    Logger,
 } from '@nestjs/common';
 
 import { FlowableService } from '../../infrastructure/flowable/flowable.service.js';
@@ -21,6 +22,8 @@ interface HistoricTask {
 
 @Injectable()
 export class WorkflowReconciliationService {
+    private readonly logger = new Logger(WorkflowReconciliationService.name);
+
     constructor(
         private readonly executions: WorkflowExecutionService,
         private readonly businessSync: WorkflowBusinessSyncService,
@@ -52,22 +55,38 @@ export class WorkflowReconciliationService {
                     await this.flowable.getHistoricTaskById<HistoricTask>(
                         execution.taskId,
                     );
-            } catch {
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                this.logger.error(
+                    `Error consultando historial en Flowable para tarea ${execution.taskId}: ${errorMsg}`,
+                    error instanceof Error ? error.stack : undefined,
+                );
                 throw new ConflictException(
-                    'No se pudo confirmar el historial de Flowable',
+                    `No se pudo confirmar el historial de Flowable: ${errorMsg}`,
                 );
             }
 
-            if (
-                historic.id !== execution.taskId ||
-                historic.processInstanceId !==
-                execution.processInstanceId ||
-                historic.assignee !== execution.executedBy ||
-                !historic.endTime ||
-                historic.deleteReason
-            ) {
+            if (historic.id !== execution.taskId || historic.processInstanceId !== execution.processInstanceId) {
                 throw new ConflictException(
-                    'No se ha confirmado una finalización normal de la tarea',
+                    'Los identificadores de la tarea o proceso no coinciden con la ejecución',
+                );
+            }
+
+            if (historic.assignee !== execution.executedBy) {
+                throw new ConflictException(
+                    'El usuario asignado en Flowable no coincide con quien ejecutó la acción',
+                );
+            }
+
+            if (historic.deleteReason) {
+                throw new ConflictException(
+                    `La tarea fue cancelada o eliminada en Flowable (motivo: ${historic.deleteReason})`,
+                );
+            }
+
+            if (!historic.endTime) {
+                throw new ConflictException(
+                    'La tarea aún no ha finalizado en el motor Flowable',
                 );
             }
 
@@ -105,15 +124,21 @@ export class WorkflowReconciliationService {
                 status: Status.SYNCED,
                 synchronized: true,
             };
-        } catch {
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            this.logger.error(
+                `Error al sincronizar negocio en reconciliación para ejecución ${id}: ${errorMsg}`,
+                error instanceof Error ? error.stack : undefined,
+            );
+
             await this.executions.setStatus(
                 id,
                 Status.RECONCILIATION_REQUIRED,
-                'La sincronización de negocio requiere revisión',
+                `La sincronización de negocio requiere revisión: ${errorMsg}`,
             );
 
             throw new ConflictException(
-                'No se pudo sincronizar el negocio',
+                `No se pudo sincronizar el negocio: ${errorMsg}`,
             );
         }
     }

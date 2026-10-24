@@ -53,4 +53,14 @@ export class CreateActionDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @ApiPropertyOptional({
+    description: 'Estado de negocio a asignar al completar la acción (ej. APROBADO, RECHAZADO)',
+    example: 'APROBADO',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  businessStatus?: string;
 }
+

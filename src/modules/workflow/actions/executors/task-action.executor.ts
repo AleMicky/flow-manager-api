@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 
 import { FlowableService } from '../../infrastructure/flowable/flowable.service.js';
@@ -24,6 +25,8 @@ import { WorkflowExecutionStatus } from '../entities/workflow-action-execution.e
 
 @Injectable()
 export class TaskActionExecutor {
+  private readonly logger = new Logger(TaskActionExecutor.name);
+
   constructor(
     private readonly flowable: FlowableService,
     private readonly actions: ActionsService,
@@ -90,13 +93,7 @@ export class TaskActionExecutor {
       ...action.variables,
     };
 
-    // 6. Verificar nuevamente la asignación.
-    await this.authorization.assertCanExecute(
-      taskId,
-      user,
-    );
-
-    // 7. Registrar la intención de ejecutar la tarea.
+    // 6. Registrar la intención de ejecutar la tarea.
     const execution = await this.executions.create({
       taskId,
       actionId: action.id,
@@ -105,31 +102,37 @@ export class TaskActionExecutor {
       businessStatus: action.businessStatus ?? null,
     });
 
-    // 8. Ejecutar la tarea en Flowable.
+    // 7. Ejecutar la tarea en Flowable.
     try {
       await this.flowable.completeTask<unknown>(
         taskId,
         variables,
       );
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Error al completar tarea ${taskId} en Flowable: ${errorMsg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
       // Puede que Flowable haya completado la tarea
       // pero NestJS no recibiera la respuesta.
       await this.executions.setStatus(
         execution.id,
         WorkflowExecutionStatus.RECONCILIATION_REQUIRED,
-        'No se pudo confirmar la ejecución en Flowable',
+        `Fallo al completar en Flowable: ${errorMsg}`,
       );
 
       throw error;
     }
 
-    // 9. Registrar que Flowable completó la tarea.
+    // 8. Registrar que Flowable completó la tarea.
     await this.executions.setStatus(
       execution.id,
       WorkflowExecutionStatus.ENGINE_COMPLETED,
     );
 
-    // 10. Sincronizar estado con PostgreSQL.
+    // 9. Sincronizar estado con PostgreSQL.
     try {
       await this.businessSync.synchronize(
         task.processInstanceId,
@@ -140,13 +143,19 @@ export class TaskActionExecutor {
         execution.id,
         WorkflowExecutionStatus.SYNCED,
       );
-    } catch {
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Error al sincronizar estado de negocio para proceso ${task.processInstanceId}: ${errorMsg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
       // La tarea terminó en Flowable, pero falló
       // la actualización del negocio.
       await this.executions.setStatus(
         execution.id,
         WorkflowExecutionStatus.RECONCILIATION_REQUIRED,
-        'Flowable completó la tarea, pero falló la sincronización',
+        `Fallo al sincronizar negocio: ${errorMsg}`,
       );
 
       return {
@@ -160,7 +169,7 @@ export class TaskActionExecutor {
       };
     }
 
-    // 11. Resultado de ejecución exitosa.
+    // 10. Resultado de ejecución exitosa.
     return {
       executionId: execution.id,
       taskId,

@@ -5,20 +5,23 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
 
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOAuth2, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { ActionsService } from './actions.service.js';
 import { CreateActionDto } from './dto/create-action.dto.js';
 import { TaskActionExecutor } from './executors/task-action.executor.js';
 import { ExecuteActionDto } from './dto/execute-action.dto.js';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
+import { Roles } from '../../auth/decorators/roles.decorator.js';
 import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @ApiTags('Workflow - Actions')
+@ApiOAuth2(['openid'], 'keycloak')
 @Controller('workflow/actions')
 export class ActionsController {
   constructor(
@@ -27,6 +30,7 @@ export class ActionsController {
   ) { }
 
   @Post()
+  @Roles('workflow-admin')
   @ApiOperation({
     summary: 'Configurar una acción BPMN',
   })
@@ -53,7 +57,7 @@ export class ActionsController {
   @ApiOperation({
     summary: 'Consultar una acción configurada',
   })
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOne(id);
   }
 
@@ -64,7 +68,7 @@ export class ActionsController {
   })
   execute(
     @Param('taskId') taskId: string,
-    @Param('actionId') actionId: string,
+    @Param('actionId', ParseUUIDPipe) actionId: string,
     @Body() dto: ExecuteActionDto,
     @CurrentUser() user: AuthUser,
   ) {

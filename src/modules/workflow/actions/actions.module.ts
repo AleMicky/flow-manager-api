@@ -8,7 +8,7 @@ import { TaskActionExecutor } from './executors/task-action.executor.js';
 import { FormsModule } from '../forms/forms.module.js';
 import { TasksModule } from '../tasks/tasks.module.js';
 import { WorkflowActionExecution } from './entities/workflow-action-execution.entity.js';
-import { SolicitudesModule } from '../../compras/solicitudes/solicitudes.module.js';
+
 import { WorkflowExecutionService } from './services/workflow-execution.service.js';
 import { WorkflowBusinessSyncService } from './services/workflow-business-sync.service.js';
 import { WorkflowReconciliationService } from './services/workflow-reconciliation.service.js';
@@ -20,7 +20,7 @@ import { WorkflowReconciliationController } from './workflow-reconciliation.cont
     FlowableModule,
     FormsModule,
     TasksModule,
-    SolicitudesModule],
+  ],
   controllers: [
     ActionsController,
     WorkflowReconciliationController
@@ -30,7 +30,6 @@ import { WorkflowReconciliationController } from './workflow-reconciliation.cont
     TaskActionExecutor,
     WorkflowExecutionService,
     WorkflowBusinessSyncService,
-    WorkflowExecutionService,
     WorkflowReconciliationService
   ],
   exports: [
