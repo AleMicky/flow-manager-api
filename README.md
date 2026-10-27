@@ -122,3 +122,8 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+docker run -d \
+--name flow-manager-redis \
+-p 127.0.0.1:6379:6379 \
+redis:7-alpine

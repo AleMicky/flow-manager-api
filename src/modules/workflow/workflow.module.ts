@@ -6,6 +6,8 @@ import { HistoryModule } from './history/history.module.js';
 import { FlowableModule } from './infrastructure/flowable/flowable.module.js';
 import { ActionsModule } from './actions/actions.module.js';
 import { FormsModule } from './forms/forms.module.js';
+import { ProcessesModule } from './processes/processes.module.js';
+import { SubmissionsModule } from './submissions/submissions.module.js';
 
 @Module({
   imports: [
@@ -16,7 +18,9 @@ import { FormsModule } from './forms/forms.module.js';
     FlowableModule,
     ActionsModule,
     FormsModule,
+    ProcessesModule,
+    SubmissionsModule,
   ],
   exports: [DefinitionsModule, InstancesModule, TasksModule, HistoryModule],
 })
-export class WorkflowModule {}
+export class WorkflowModule { }
