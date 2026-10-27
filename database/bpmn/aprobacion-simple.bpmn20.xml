@@ -1,0 +1,33 @@
+
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions
+  xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:flowable="http://flowable.org/bpmn"
+  targetNamespace="http://flow-manager.local">
+
+  <process
+    id="aprobacionSimple"
+    name="Aprobación simple"
+    isExecutable="true">
+
+    <startEvent id="inicio" name="Inicio" />
+
+    <userTask
+      id="revisar"
+      name="Revisar solicitud"
+      flowable:candidateGroups="workflow-user" />
+
+    <endEvent id="fin" name="Fin" />
+
+    <sequenceFlow
+      id="flujo1"
+      sourceRef="inicio"
+      targetRef="revisar" />
+
+    <sequenceFlow
+      id="flujo2"
+      sourceRef="revisar"
+      targetRef="fin" />
+
+  </process>
+</definitions>
