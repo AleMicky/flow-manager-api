@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { FlowableService } from '../infrastructure/flowable/flowable.service.js';
-import { QueryDefinitionsDto } from './dto/query-definitions.dto.js';
+import { FlowableService } from '../../infrastructure/flowable/flowable.service.js';
+import { QueryDefinitionsDto } from '../dto/query-definitions.dto.js';
 
 import type {
   FlowablePage,
   ProcessDefinition,
-} from './interfaces/process-definition.interface.js';
+} from '../interfaces/process-definition.interface.js';
 
 @Injectable()
 export class DefinitionsService {
-  constructor(private readonly flowableService: FlowableService) {}
+  constructor(private readonly flowableService: FlowableService) { }
 
   findAll(query: QueryDefinitionsDto) {
     return this.flowableService.getDefinitions<FlowablePage<ProcessDefinition>>(

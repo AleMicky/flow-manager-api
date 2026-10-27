@@ -11,18 +11,24 @@ export class OidcService {
 
     private configuration(): Promise<oidc.Configuration> {
         if (!this.configurationPromise) {
-            this.configurationPromise = oidc.discovery(
-                new URL(
-                    this.env.getOrThrow<string>(
-                        'KEYCLOAK_ISSUER',
-                    ),
+            const issuerUrl = new URL(
+                this.env.getOrThrow<string>(
+                    'KEYCLOAK_ISSUER',
                 ),
+            );
+
+            this.configurationPromise = oidc.discovery(
+                issuerUrl,
                 this.env.getOrThrow<string>(
                     'KEYCLOAK_BFF_CLIENT_ID',
                 ),
                 this.env.getOrThrow<string>(
                     'KEYCLOAK_BFF_CLIENT_SECRET',
                 ),
+                undefined,
+                issuerUrl.protocol === 'http:'
+                    ? { execute: [oidc.allowInsecureRequests] }
+                    : undefined,
             ).catch((error: unknown) => {
                 this.configurationPromise = undefined;
                 throw error;
@@ -82,14 +88,19 @@ export class OidcService {
     }
 
     async logoutUrl(idToken?: string) {
+        const redirectUri =
+            this.env.get<string>('KEYCLOAK_POST_LOGOUT_REDIRECT_URI') ??
+            this.env.get<string>('APP_URL');
+
         const params: Record<string, string> = {
             client_id: this.env.getOrThrow<string>(
                 'KEYCLOAK_BFF_CLIENT_ID',
             ),
-            post_logout_redirect_uri: this.env.getOrThrow<string>(
-                'APP_URL',
-            ),
         };
+
+        if (redirectUri && redirectUri !== 'none') {
+            params.post_logout_redirect_uri = redirectUri;
+        }
 
         if (idToken) {
             params.id_token_hint = idToken;

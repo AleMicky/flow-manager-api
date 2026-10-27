@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import {
     createRemoteJWKSet,
     jwtVerify,
+    decodeJwt,
     type JWTPayload,
 } from 'jose';
 
@@ -51,12 +52,21 @@ export class AuthService {
 
     async validateToken(token: string): Promise<AuthUser> {
         try {
+            const unverified = decodeJwt<KeycloakPayload>(token);
+            console.log('Claims del access_token en Keycloak:', {
+                iss: unverified.iss,
+                aud: unverified.aud,
+                azp: (unverified as Record<string, unknown>).azp,
+                sub: unverified.sub,
+                expectedAudience: this.audience,
+                expectedIssuer: this.issuer,
+            });
+
             const { payload } = await jwtVerify<KeycloakPayload>(
                 token,
                 this.jwks,
                 {
                     issuer: this.issuer,
-                    audience: this.audience,
                     algorithms: ['RS256'],
                     clockTolerance: 5,
                 },
@@ -68,10 +78,38 @@ export class AuthService {
                 );
             }
 
-            const roles =
+            // Validar que el token corresponda a nuestra audiencia esperada o cliente autorizado (azp)
+            const tokenAud = Array.isArray(payload.aud)
+                ? payload.aud
+                : payload.aud
+                ? [payload.aud]
+                : [];
+
+            const azp = (payload as Record<string, unknown>).azp;
+            const bffClientId = this.config.get<string>('KEYCLOAK_BFF_CLIENT_ID');
+
+            const isAudienceValid =
+                tokenAud.includes(this.audience) ||
+                (bffClientId && tokenAud.includes(bffClientId)) ||
+                tokenAud.includes('account') ||
+                azp === bffClientId ||
+                azp === this.audience;
+
+            if (!isAudienceValid) {
+                throw new UnauthorizedException(
+                    `Audiencia no autorizada: [${tokenAud.join(', ')}], azp: ${azp}`,
+                );
+            }
+
+            const clientRoles =
                 payload.resource_access?.[
                     this.rolesClientId
                 ]?.roles ?? [];
+
+            const realmRoles =
+                (payload as Record<string, { roles?: string[] }>).realm_access?.roles ?? [];
+
+            const roles = Array.from(new Set([...clientRoles, ...realmRoles]));
 
             return {
                 id: payload.sub,
@@ -81,9 +119,11 @@ export class AuthService {
                 name: payload.name,
                 roles,
             };
-        } catch {
+        } catch (error) {
+            console.error('Error detallado en validateToken:', error);
+            const detail = error instanceof Error ? error.message : String(error);
             throw new UnauthorizedException(
-                'La sesión no tiene una identidad válida',
+                `La sesión no tiene una identidad válida: ${detail}`,
             );
         }
     }

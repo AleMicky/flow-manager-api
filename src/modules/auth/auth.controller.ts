@@ -121,9 +121,11 @@ export class AuthController {
             await this.auth.validateToken(
                 tokens.access_token,
             );
-        } catch {
+        } catch (error) {
+            console.error('Error en callback OIDC:', error);
+            const detail = error instanceof Error ? error.message : String(error);
             throw new UnauthorizedException(
-                'Falló la autenticación con Keycloak',
+                `Falló la autenticación con Keycloak: ${detail}`,
             );
         }
 
