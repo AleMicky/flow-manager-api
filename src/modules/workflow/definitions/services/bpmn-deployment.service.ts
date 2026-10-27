@@ -47,9 +47,17 @@ export class BpmnDeploymentService {
         private readonly config: ConfigService,
         private readonly validator: BpmnValidatorService,
     ) {
-        this.baseUrl = this.config
-            .getOrThrow<string>('FLOWABLE_URL')
-            .replace(/\/+$/, '');
+        const rawUrl =
+            this.config.get<string>('FLOWABLE_BASE_URL') ??
+            this.config.get<string>('FLOWABLE_URL');
+
+        if (!rawUrl) {
+            throw new Error(
+                'Configuration key "FLOWABLE_BASE_URL" is missing',
+            );
+        }
+
+        this.baseUrl = rawUrl.replace(/\/+$/, '');
     }
 
     private get client() {

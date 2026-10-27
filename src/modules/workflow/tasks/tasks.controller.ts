@@ -38,6 +38,28 @@ export class TasksController {
     return this.tasksService.findAll(query);
   }
 
+  @Get('mine')
+  @ApiOperation({
+    summary: 'Listar mis tareas asignadas',
+  })
+  findMine(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryTasksDto,
+  ) {
+    return this.tasksService.findMine(user, query);
+  }
+
+  @Get('available')
+  @ApiOperation({
+    summary: 'Listar tareas disponibles para reclamar',
+  })
+  findAvailable(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryTasksDto,
+  ) {
+    return this.tasksService.findAvailable(user, query);
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: 'Consultar una tarea',

@@ -10,10 +10,44 @@ import type {
   FlowablePage,
   WorkflowTask,
 } from './interfaces/task.interface.js';
+import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @Injectable()
 export class TasksService {
   constructor(private readonly flowableService: FlowableService) {}
+
+  findMine(user: AuthUser, query: QueryTasksDto) {
+    const params: Record<string, unknown> = {
+      start: query.start ?? 0,
+      size: query.size ?? 20,
+      assignee: user.id,
+      ...(query.processInstanceId && {
+        processInstanceId: query.processInstanceId,
+      }),
+      ...(query.name && { name: query.name }),
+    };
+
+    return this.flowableService.getTasks<FlowablePage<WorkflowTask>>(params);
+  }
+
+  findAvailable(user: AuthUser, query: QueryTasksDto) {
+    const params: Record<string, unknown> = {
+      start: query.start ?? 0,
+      size: query.size ?? 20,
+      unassigned: true,
+      ...(query.candidateGroup
+        ? { candidateGroup: query.candidateGroup }
+        : user.roles?.length
+        ? { candidateGroupIn: user.roles.join(',') }
+        : { candidateUser: user.id }),
+      ...(query.processInstanceId && {
+        processInstanceId: query.processInstanceId,
+      }),
+      ...(query.name && { name: query.name }),
+    };
+
+    return this.flowableService.getTasks<FlowablePage<WorkflowTask>>(params);
+  }
 
   findAll(query: QueryTasksDto) {
     const params: Record<string, unknown> = {

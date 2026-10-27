@@ -56,7 +56,7 @@ export class DefinitionsController {
   }
 
   @Get(':id/xml')
-  @Roles('workflow-admin', 'workflow-designer')
+  @Roles('workflow-admin', 'workflow-designer', 'workflow-user')
   @ApiOperation({
     summary: 'Recuperar el XML de una definición BPMN',
   })

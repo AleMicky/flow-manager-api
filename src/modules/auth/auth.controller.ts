@@ -94,16 +94,8 @@ export class AuthController {
         await this.saveSession(req);
 
         // Evitar depender del Host enviado por el cliente.
-        const callbackUrl = new URL(
-            this.config.getOrThrow<string>(
-                'AUTH_CALLBACK_URL',
-            ),
-        );
-
-        const received = new URL(
-            req.originalUrl,
-            'http://internal.invalid',
-        );
+        const callbackUrl = new URL(this.config.getOrThrow<string>('AUTH_CALLBACK_URL'));
+        const received = new URL(req.originalUrl, 'http://internal.invalid');
 
         callbackUrl.search = received.search;
 
