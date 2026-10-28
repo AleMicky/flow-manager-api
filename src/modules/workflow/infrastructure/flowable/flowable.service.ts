@@ -3,7 +3,7 @@ import { FlowableClient } from './flowable.client.js';
 
 @Injectable()
 export class FlowableService {
-  constructor(private readonly client: FlowableClient) { }
+  constructor(private readonly client: FlowableClient) {}
 
   getDefinitions<T = unknown>(params?: Record<string, unknown>): Promise<T> {
     return this.client.get<T>('/repository/process-definitions', params);
@@ -51,6 +51,12 @@ export class FlowableService {
     );
   }
 
+  getDefinitionXml(id: string): Promise<string> {
+    return this.client.get<string>(
+      `/repository/process-definitions/${encodeURIComponent(id)}/resourcedata`,
+    );
+  }
+
   getInstancesFiltered<T>(params: Record<string, unknown>): Promise<T> {
     return this.client.get<T>('/runtime/process-instances', params);
   }
@@ -94,6 +100,50 @@ export class FlowableService {
     });
   }
 
+  getTaskIdentityLinks<T>(taskId: string): Promise<T> {
+    return this.client.get<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks`,
+    );
+  }
+
+  addTaskCandidateGroup<T = unknown>(
+    taskId: string,
+    groupId: string,
+  ): Promise<T> {
+    return this.client.post<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks`,
+      {
+        group: groupId,
+        type: 'candidate',
+      },
+    );
+  }
+
+  removeTaskCandidateGroup(taskId: string, groupId: string): Promise<void> {
+    return this.client.delete<void>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks/groups/${encodeURIComponent(groupId)}/candidate`,
+    );
+  }
+
+  addTaskCandidateUser<T = unknown>(
+    taskId: string,
+    userId: string,
+  ): Promise<T> {
+    return this.client.post<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks`,
+      {
+        user: userId,
+        type: 'candidate',
+      },
+    );
+  }
+
+  removeTaskCandidateUser(taskId: string, userId: string): Promise<void> {
+    return this.client.delete<void>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks/users/${encodeURIComponent(userId)}/candidate`,
+    );
+  }
+
   // ==========================================
   // HISTORY
   // ==========================================
@@ -117,16 +167,4 @@ export class FlowableService {
       `/history/historic-task-instances/${encodeURIComponent(id)}`,
     );
   }
-
-
-  getTaskIdentityLinks<T>(
-    taskId: string,
-  ): Promise<T> {
-    return this.client.get<T>(
-      `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks`,
-    );
-  }
-
-
-
 }
