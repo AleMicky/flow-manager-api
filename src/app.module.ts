@@ -12,6 +12,7 @@ import { WorkflowModule } from './modules/workflow/workflow.module.js';
 
 import { FlowableModule } from './modules/workflow/infrastructure/flowable/flowable.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { KeycloakAdminModule } from './modules/keycloak-admin/keycloak-admin.module.js';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
     WorkflowModule,
 
     AuthModule,
+    KeycloakAdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

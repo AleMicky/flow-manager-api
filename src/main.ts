@@ -83,6 +83,9 @@ async function bootstrap() {
   console.log(
     `Flow Manager API: http://localhost:${port}/api`,
   );
+
+  console.log(`Swagger: http://localhost:${port}/api/docs`)
+
 }
 
 void bootstrap();
