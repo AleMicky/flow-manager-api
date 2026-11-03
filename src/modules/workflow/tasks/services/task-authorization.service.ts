@@ -111,7 +111,11 @@ export class TaskAuthorizationService {
       return task;
     }
 
-    if (task.assignee) {
+    const isAdmin = user.roles?.some((r) =>
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
+    );
+
+    if (task.assignee && !isAdmin) {
       throw new ConflictException(
         'La tarea ya fue reclamada por otro usuario',
       );
@@ -119,7 +123,7 @@ export class TaskAuthorizationService {
 
     const allowed = await this.isCandidate(task, user);
 
-    if (!allowed) {
+    if (!allowed && !isAdmin) {
       throw new ForbiddenException(
         'No eres candidato para esta tarea (verifica los grupos asignados a esta tarea BPMN)',
       );
@@ -135,7 +139,7 @@ export class TaskAuthorizationService {
 
     const isDev = this.config.get<string>('NODE_ENV') !== 'production';
     const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin'].includes(r),
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
     );
 
     if (task.assignee !== user.id && !isAdmin && !isDev) {
@@ -155,7 +159,7 @@ export class TaskAuthorizationService {
 
     const isDev = this.config.get<string>('NODE_ENV') !== 'production';
     const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin'].includes(r),
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
     );
 
     if (task.assignee !== user.id && !isAdmin && !isDev) {
