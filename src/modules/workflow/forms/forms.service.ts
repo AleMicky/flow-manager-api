@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -25,7 +26,15 @@ export class FormsService {
   ) {}
 
   async create(dto: CreateFormDto) {
-    await this.flowable.getDefinitionById(dto.processDefinitionId);
+    if (!dto.processDefinitionKey && !dto.processDefinitionId) {
+      throw new BadRequestException(
+        'Debe especificar processDefinitionKey o processDefinitionId',
+      );
+    }
+
+    if (dto.processDefinitionId) {
+      await this.flowable.getDefinitionById(dto.processDefinitionId);
+    }
 
     const form = this.repository.create({
       ...dto,
@@ -40,7 +49,7 @@ export class FormsService {
         (error.driverError as { code?: string })?.code === '23505'
       ) {
         throw new ConflictException(
-          'Ya existe un formulario para esta tarea y versión',
+          'Ya existe un formulario para esta tarea y proceso',
         );
       }
 
@@ -58,20 +67,39 @@ export class FormsService {
     return form;
   }
 
-  async findByTask(taskId: string) {
-    const task = await this.flowable.getTaskById<FlowableTask>(taskId);
+  async findOptionalByTask(taskId: string): Promise<WorkflowForm | null> {
+    try {
+      const task = await this.flowable.getTaskById<FlowableTask>(taskId);
 
-    if (!task.processDefinitionId || !task.taskDefinitionKey) {
-      throw new NotFoundException(
-        'La tarea no tiene una definición BPMN asociada',
-      );
+      if (!task.processDefinitionId || !task.taskDefinitionKey) {
+        return null;
+      }
+
+      const processDefinitionKey = task.processDefinitionId.split(':')[0];
+
+      const form = await this.repository.findOne({
+        where: [
+          {
+            processDefinitionId: task.processDefinitionId,
+            taskDefinitionKey: task.taskDefinitionKey,
+            active: true,
+          },
+          {
+            processDefinitionKey,
+            taskDefinitionKey: task.taskDefinitionKey,
+            active: true,
+          },
+        ],
+      });
+
+      return form;
+    } catch {
+      return null;
     }
+  }
 
-    const form = await this.repository.findOneBy({
-      processDefinitionId: task.processDefinitionId,
-      taskDefinitionKey: task.taskDefinitionKey,
-      active: true,
-    });
+  async findByTask(taskId: string) {
+    const form = await this.findOptionalByTask(taskId);
 
     if (!form) {
       throw new NotFoundException(

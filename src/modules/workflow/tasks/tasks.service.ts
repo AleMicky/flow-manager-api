@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { FlowableService } from '../infrastructure/flowable/flowable.service.js';
 import { TaskAssignmentsService } from './services/task-assignments.service.js';
+import { TaskFormService } from '../forms/services/task-form.service.js';
 
 import { QueryTasksDto } from './dto/query-tasks.dto.js';
 import { ClaimTaskDto } from './dto/claim-task.dto.js';
@@ -18,6 +20,8 @@ export class TasksService {
   constructor(
     private readonly flowableService: FlowableService,
     private readonly taskAssignments: TaskAssignmentsService,
+    private readonly taskFormService: TaskFormService,
+    private readonly config: ConfigService,
   ) {}
 
   findMine(user: AuthUser, query: QueryTasksDto) {
@@ -40,6 +44,24 @@ export class TasksService {
   ): Promise<FlowablePage<WorkflowTask>> {
     const start = query.start ?? 0;
     const size = query.size ?? 20;
+
+    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
+    const isAdmin = user.roles?.some((r) =>
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
+    );
+
+    // En desarrollo o modo admin, mostrar todas las tareas sin asignar para pruebas
+    if ((isDev || isAdmin) && !query.candidateGroup) {
+      return this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
+        start,
+        size,
+        unassigned: true,
+        ...(query.processInstanceId && {
+          processInstanceId: query.processInstanceId,
+        }),
+        ...(query.name && { name: query.name }),
+      });
+    }
 
     if (query.candidateGroup) {
       return this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
@@ -169,7 +191,27 @@ export class TasksService {
     return this.flowableService.unclaimTask<void>(id);
   }
 
-  complete(id: string, dto: CompleteTaskDto) {
-    return this.flowableService.completeTask<void>(id, dto.variables ?? {});
+  async complete(id: string, dto: CompleteTaskDto) {
+    const variables = dto.variables ?? {};
+    await this.taskFormService.validateIfFormExists(id, variables);
+    return this.flowableService.completeTask<void>(id, variables);
+  }
+
+  async getVariables(id: string): Promise<Record<string, unknown>> {
+    try {
+      const vars = await this.flowableService.getTaskVariables<
+        Array<{ name: string; value: unknown }>
+      >(id);
+
+      const map: Record<string, unknown> = {};
+      if (Array.isArray(vars)) {
+        for (const v of vars) {
+          map[v.name] = v.value;
+        }
+      }
+      return map;
+    } catch {
+      return {};
+    }
   }
 }

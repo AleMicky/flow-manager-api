@@ -67,6 +67,39 @@ export class FlowableService {
     );
   }
 
+  getInstanceVariables<T = Array<{ name: string; value: unknown }>>(
+    instanceId: string,
+  ): Promise<T> {
+    return this.client.get<T>(
+      `/runtime/process-instances/${encodeURIComponent(instanceId)}/variables`,
+    );
+  }
+
+  getHistoricVariables<T = unknown>(
+    instanceId: string,
+  ): Promise<T> {
+    return this.client.get<T>('/history/historic-variable-instances', {
+      processInstanceId: instanceId,
+      size: 100,
+    });
+  }
+
+  getInstanceDiagram(
+    id: string,
+  ): Promise<{ data: Buffer; contentType: string }> {
+    return this.client.getBuffer(
+      `/runtime/process-instances/${encodeURIComponent(id)}/diagram`,
+    );
+  }
+
+  getDefinitionImage(
+    id: string,
+  ): Promise<{ data: Buffer; contentType: string }> {
+    return this.client.getBuffer(
+      `/repository/process-definitions/${encodeURIComponent(id)}/image`,
+    );
+  }
+
   deleteInstance(id: string, reason: string): Promise<void> {
     return this.client.delete<void>(
       `/runtime/process-instances/${encodeURIComponent(id)}`,
@@ -86,6 +119,14 @@ export class FlowableService {
     return this.client.get<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`);
   }
 
+  getTaskVariables<T = Array<{ name: string; value: unknown }>>(
+    taskId: string,
+  ): Promise<T> {
+    return this.client.get<T>(
+      `/runtime/tasks/${encodeURIComponent(taskId)}/variables`,
+    );
+  }
+
   claimTask<T>(taskId: string, assignee: string): Promise<T> {
     return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
       action: 'claim',
@@ -100,10 +141,21 @@ export class FlowableService {
     });
   }
 
+  setTaskAssignee<T>(taskId: string, assignee: string | null): Promise<T> {
+    return this.client.post<T>(`/runtime/tasks/${encodeURIComponent(taskId)}`, {
+      action: 'claim',
+      assignee,
+    });
+  }
+
   getTaskIdentityLinks<T>(taskId: string): Promise<T> {
     return this.client.get<T>(
       `/runtime/tasks/${encodeURIComponent(taskId)}/identitylinks`,
     );
+  }
+
+  getTaskCandidateGroups<T>(taskId: string): Promise<T> {
+    return this.getTaskIdentityLinks<T>(taskId);
   }
 
   addTaskCandidateGroup<T = unknown>(

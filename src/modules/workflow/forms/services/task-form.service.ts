@@ -80,4 +80,40 @@ export class TaskFormService {
       });
     }
   }
+
+  async validateIfFormExists(
+    taskId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const form = await this.formsService.findOptionalByTask(taskId);
+    if (!form) {
+      return;
+    }
+
+    let validate;
+    try {
+      validate = this.ajv.compile(form.schema);
+    } catch {
+      throw new BadRequestException('El esquema del formulario es inválido');
+    }
+
+    const valid = validate(data);
+    if (!valid) {
+      const errors: FormValidationResult['errors'] = (
+        validate.errors ?? []
+      ).map((error: ErrorObject) => ({
+        field:
+          error.keyword === 'required'
+            ? String(error.params.missingProperty)
+            : error.instancePath,
+        message: error.message ?? 'Valor inválido',
+        keyword: error.keyword,
+      }));
+
+      throw new UnprocessableEntityException({
+        message: 'El formulario contiene errores de validación',
+        errors,
+      });
+    }
+  }
 }

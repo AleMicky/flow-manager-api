@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions
+  xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:flowable="http://flowable.org/bpmn"
+  targetNamespace="http://endeandina.bo/bpmn/gaf">
+
+  <process
+    id="prGaf08Adquisiciones"
+    name="PR-GAF-08 Flujo de Aprobaciones de Adquisiciones"
+    isExecutable="true">
+
+    <!-- 1. EVENTO DE INICIO -->
+    <startEvent id="inicioSolicitud" name="Registro de Solicitud de Adquisición" flowable:initiator="initiator" />
+
+    <sequenceFlow id="flujo1" sourceRef="inicioSolicitud" targetRef="forkVerificaciones" />
+
+    <!-- 2. FASES SIMULTÁNEAS DE VERIFICACIÓN -->
+    <parallelGateway id="forkVerificaciones" name="Inicio Verificaciones Simultáneas" />
+
+    <sequenceFlow id="flujoVerifExistencias" sourceRef="forkVerificaciones" targetRef="taskVerificarExistencias" />
+    <userTask
+      id="taskVerificarExistencias"
+      name="Verificación de existencias / activos - ${correlativo}"
+      flowable:candidateGroups="encargado-almacenes">
+      <documentation>Verificación de existencias para trámite ${correlativo}</documentation>
+    </userTask>
+    <sequenceFlow id="flujoExistenciasDone" sourceRef="taskVerificarExistencias" targetRef="joinVerificaciones" />
+
+    <sequenceFlow id="flujoVerifPresupuesto" sourceRef="forkVerificaciones" targetRef="taskVerificarPresupuesto" />
+    <userTask
+      id="taskVerificarPresupuesto"
+      name="Verificación de presupuesto - ${correlativo}"
+      flowable:candidateGroups="encargado-presupuestos">
+      <documentation>Verificación de partida presupuestaria para trámite ${correlativo}</documentation>
+    </userTask>
+    <sequenceFlow id="flujoPresupuestoDone" sourceRef="taskVerificarPresupuesto" targetRef="joinVerificaciones" />
+
+    <parallelGateway id="joinVerificaciones" name="Fin Verificaciones Simultáneas" />
+
+    <sequenceFlow id="flujoJoinToEvalVerif" sourceRef="joinVerificaciones" targetRef="evalVerificaciones" />
+
+    <exclusiveGateway id="evalVerificaciones" name="¿Verificaciones Aprobadas?" />
+
+    <sequenceFlow id="flujoVerifAprobadas" name="Ambos VoBo Aprobados" sourceRef="evalVerificaciones" targetRef="taskAsignarEncargado">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoAlmacenes == true && aprobadoPresupuesto == true}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoVerifRechazadas" name="Rechazado en Almacenes o Presupuesto" sourceRef="evalVerificaciones" targetRef="finRechazadoVerificacion">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoAlmacenes == false || aprobadoPresupuesto == false}]]></conditionExpression>
+    </sequenceFlow>
+
+    <endEvent id="finRechazadoVerificacion" name="Fin - Rechazado en Verificación" />
+
+    <!-- 3. ASIGNACIÓN ENCARGADO DE ADQUISICIONES -->
+    <userTask
+      id="taskAsignarEncargado"
+      name="Asignación Encargado de Adquisiciones - ${correlativo}"
+      flowable:candidateGroups="jefe-adquisiciones">
+      <documentation>Asignación de responsable para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoAsignadoToRevision" sourceRef="taskAsignarEncargado" targetRef="taskRevisarSolicitud" />
+
+    <!-- 4. REVISIÓN SOLICITUD DE ADQUISICIÓN -->
+    <userTask
+      id="taskRevisarSolicitud"
+      name="Revisión solicitud de adquisición - ${correlativo}"
+      flowable:assignee="${encargadoContratacionUserId}">
+      <documentation>Revisión documental técnica y administrativa para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoRevisionToSuperior" sourceRef="taskRevisarSolicitud" targetRef="taskAprobacionSuperior" />
+
+    <!-- 5. APROBACIÓN INMEDIATO SUPERIOR -->
+    <userTask
+      id="taskAprobacionSuperior"
+      name="Aprobación Inmediato Superior - ${correlativo}"
+      flowable:candidateGroups="jefe-inmediato-superior">
+      <documentation>Aprobación jerárquica de unidad solicitante para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoSuperiorToEvalSuperior" sourceRef="taskAprobacionSuperior" targetRef="evalSuperior" />
+
+    <exclusiveGateway id="evalSuperior" name="¿Aprobado por Inmediato Superior?" />
+
+    <sequenceFlow id="flujoSuperiorAprobado" name="Aprobado por Superior" sourceRef="evalSuperior" targetRef="gatewayCategoria">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoSuperior == true}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoSuperiorRechazado" name="Rechazado por Superior" sourceRef="evalSuperior" targetRef="finRechazadoSuperior">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoSuperior == false}]]></conditionExpression>
+    </sequenceFlow>
+
+    <endEvent id="finRechazadoSuperior" name="Fin - Rechazado por Inmediato Superior" />
+
+    <!-- BIFURCACIÓN SEGÚN CATEGORÍA / NIVEL DE MATERIALIDAD -->
+    <exclusiveGateway id="gatewayCategoria" name="Bifurcación por Categoría / Materialidad" />
+
+    <!-- RAMA CATEGORÍA I (Hasta Bs. 150.000) -->
+    <sequenceFlow id="flujoCat1" name="Categoría I (Hasta Bs. 150.000)" sourceRef="gatewayCategoria" targetRef="taskGafCat1">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${categoria == 'CATEGORIA_I' || montoEstimadoBs <= 150000}]]></conditionExpression>
+    </sequenceFlow>
+
+    <userTask
+      id="taskGafCat1"
+      name="Aprobación GAF (Cat. I) - ${correlativo}"
+      flowable:candidateGroups="gerencia-administrativa-financiera">
+      <documentation>Autorización GAF Categoría I para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoGaf1ToDec1" sourceRef="taskGafCat1" targetRef="taskDecisionFinalCat1" />
+
+    <userTask
+      id="taskDecisionFinalCat1"
+      name="Decisión final (Gerente de Área) - ${correlativo}"
+      flowable:candidateGroups="gerente-area">
+      <documentation>Resolución de adjudicación Cat. I para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoDec1ToEval" sourceRef="taskDecisionFinalCat1" targetRef="evalDecisionFinal" />
+
+    <!-- RAMA CATEGORÍAS II, III Y ESPECIAL (> Bs. 150.000) -->
+    <sequenceFlow id="flujoCat23" name="Categorías II, III y Especial (> Bs. 150.000)" sourceRef="gatewayCategoria" targetRef="forkVobos">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${categoria != 'CATEGORIA_I' && montoEstimadoBs > 150000}]]></conditionExpression>
+    </sequenceFlow>
+
+    <parallelGateway id="forkVobos" name="Inicio Vistos Buenos Simultáneos" />
+
+    <sequenceFlow id="flujoVoboFin" sourceRef="forkVobos" targetRef="taskVoboFinanciero" />
+    <userTask
+      id="taskVoboFinanciero"
+      name="Visto bueno financiero - ${correlativo}"
+      flowable:candidateGroups="jefe-administrativo-financiero">
+      <documentation>VoBo Financiero para trámite ${correlativo}</documentation>
+    </userTask>
+    <sequenceFlow id="flujoVoboFinDone" sourceRef="taskVoboFinanciero" targetRef="joinVobos" />
+
+    <sequenceFlow id="flujoVoboLeg" sourceRef="forkVobos" targetRef="taskVoboLegal" />
+    <userTask
+      id="taskVoboLegal"
+      name="Visto bueno legal - ${correlativo}"
+      flowable:candidateGroups="jefe-legal">
+      <documentation>VoBo Legal para trámite ${correlativo}</documentation>
+    </userTask>
+    <sequenceFlow id="flujoVoboLegDone" sourceRef="taskVoboLegal" targetRef="joinVobos" />
+
+    <parallelGateway id="joinVobos" name="Fin Vistos Buenos Simultáneos" />
+
+    <sequenceFlow id="flujoVobosToGaf2" sourceRef="joinVobos" targetRef="taskGafCat2" />
+
+    <userTask
+      id="taskGafCat2"
+      name="Aprobación y Designación Comités (GAF) - ${correlativo}"
+      flowable:candidateGroups="gerencia-administrativa-financiera">
+      <documentation>Aprobación GAF y designación de comisiones para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoGaf2ToDec2" sourceRef="taskGafCat2" targetRef="taskDecisionFinalCat2" />
+
+    <userTask
+      id="taskDecisionFinalCat2"
+      name="Decisión final (Gerente General) - ${correlativo}"
+      flowable:candidateGroups="gerente-general">
+      <documentation>Resolución y adjudicación Gerencia General para trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoDec2ToEval" sourceRef="taskDecisionFinalCat2" targetRef="evalDecisionFinal" />
+
+    <!-- EVALUACIÓN DECISIÓN FINAL (COMÚN) -->
+    <exclusiveGateway id="evalDecisionFinal" name="Evaluación Decisión Final" />
+
+    <sequenceFlow id="flujoDecisionAprobado" name="Aprobado" sourceRef="evalDecisionFinal" targetRef="finAprobado">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${decisionFinal == 'APROBADO'}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoDecisionObservado" name="Observado (Retorna para subsanación)" sourceRef="evalDecisionFinal" targetRef="taskRevisarSolicitud">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${decisionFinal == 'OBSERVADO'}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoDecisionRechazado" name="Rechazado y Archivado" sourceRef="evalDecisionFinal" targetRef="finRechazado">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${decisionFinal == 'RECHAZADO'}]]></conditionExpression>
+    </sequenceFlow>
+
+    <endEvent id="finAprobado" name="Fin - Aprobado para Contratación" />
+    <endEvent id="finRechazado" name="Fin - Rechazado y Archivado" />
+
+  </process>
+</definitions>

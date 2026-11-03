@@ -10,12 +10,21 @@ import {
 } from 'class-validator';
 
 export class CreateFormDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Clave del proceso BPMN (aplica a todas las versiones del proceso)',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  processDefinitionId!: string;
+  processDefinitionKey?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'ID específico de la versión desplegada en Flowable',
+  })
+  @IsOptional()
+  @IsString()
+  processDefinitionId?: string;
+
+  @ApiProperty({ example: 'taskVerificarExistencias' })
   @IsString()
   @IsNotEmpty()
   taskDefinitionKey!: string;

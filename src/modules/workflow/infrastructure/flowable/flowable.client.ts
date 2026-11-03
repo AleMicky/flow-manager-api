@@ -38,6 +38,25 @@ export class FlowableClient {
     }
   }
 
+  async getBuffer(
+    url: string,
+    params?: object,
+  ): Promise<{ data: Buffer; contentType: string }> {
+    try {
+      const response = await this.http.get<ArrayBuffer>(url, {
+        params,
+        responseType: 'arraybuffer',
+      });
+      return {
+        data: Buffer.from(response.data),
+        contentType:
+          (response.headers['content-type'] as string) || 'image/png',
+      };
+    } catch (error) {
+      return this.handleError(error);
+    }
+  }
+
   async post<T>(url: string, data: unknown): Promise<T> {
     try {
       const response = await this.http.post<T>(url, data);
@@ -46,7 +65,6 @@ export class FlowableClient {
       return this.handleError(error);
     }
   }
-
 
   async delete<T>(url: string, params?: Record<string, unknown>): Promise<T> {
     try {
@@ -59,7 +77,6 @@ export class FlowableClient {
       return this.handleError(error);
     }
   }
-
 
   private handleError(error: unknown): never {
     if (axios.isAxiosError(error)) {
@@ -107,5 +124,4 @@ export class FlowableClient {
       'No se pudo completar la operación en Flowable',
     );
   }
-
 }

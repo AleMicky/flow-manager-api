@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { FlowableService } from '../../infrastructure/flowable/flowable.service.js';
 import { TaskAssignmentsService } from './task-assignments.service.js';
@@ -29,6 +30,7 @@ export class TaskAuthorizationService {
   constructor(
     private readonly flowable: FlowableService,
     private readonly taskAssignments: TaskAssignmentsService,
+    private readonly config: ConfigService,
   ) {}
 
   private async getTask(taskId: string): Promise<FlowableTask> {
@@ -39,6 +41,21 @@ export class TaskAuthorizationService {
     task: FlowableTask,
     user: AuthUser,
   ): Promise<boolean> {
+    // 1. En entorno de desarrollo (NODE_ENV !== 'production'), permitir probar cualquier tarea
+    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
+    if (isDev) {
+      return true;
+    }
+
+    // 2. Si el usuario es administrador, puede supervisar y reclamar cualquier tarea
+    const isAdmin = user.roles?.some((r) =>
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
+    );
+    if (isAdmin) {
+      return true;
+    }
+
+    // 3. En producción: validar grupos y roles asignados a la tarea
     const effectiveGroups =
       await this.taskAssignments.getUserEffectiveGroupsAndRoles(user);
 
@@ -116,9 +133,14 @@ export class TaskAuthorizationService {
   async unclaim(taskId: string, user: AuthUser): Promise<void> {
     const task = await this.getTask(taskId);
 
-    if (task.assignee !== user.id) {
+    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
+    const isAdmin = user.roles?.some((r) =>
+      ['workflow-admin', 'admin', 'realm-admin'].includes(r),
+    );
+
+    if (task.assignee !== user.id && !isAdmin && !isDev) {
       throw new ForbiddenException(
-        'Solo el asignado puede liberar la tarea',
+        'Solo el asignado o un administrador puede liberar la tarea',
       );
     }
 
@@ -131,7 +153,12 @@ export class TaskAuthorizationService {
   ): Promise<FlowableTask> {
     const task = await this.getTask(taskId);
 
-    if (task.assignee !== user.id) {
+    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
+    const isAdmin = user.roles?.some((r) =>
+      ['workflow-admin', 'admin', 'realm-admin'].includes(r),
+    );
+
+    if (task.assignee !== user.id && !isAdmin && !isDev) {
       throw new ForbiddenException(
         'Debes reclamar la tarea antes de ejecutarla',
       );

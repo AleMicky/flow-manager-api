@@ -10,6 +10,7 @@ import { WorkflowTaskAssignment } from './entities/workflow-task-assignment.enti
 import { FlowableModule } from '../infrastructure/flowable/flowable.module.js';
 import { AuthModule } from '../../auth/auth.module.js';
 import { KeycloakAdminModule } from '../../keycloak-admin/keycloak-admin.module.js';
+import { FormsModule } from '../forms/forms.module.js';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { KeycloakAdminModule } from '../../keycloak-admin/keycloak-admin.module.
     FlowableModule,
     AuthModule,
     KeycloakAdminModule,
+    FormsModule,
   ],
   controllers: [TasksController, TaskAssignmentsController],
   providers: [

@@ -26,9 +26,10 @@ import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 @ApiTags('Workflow - Tasks')
 @Controller('workflow/tasks')
 export class TasksController {
-  constructor(private readonly tasksService: TasksService,
+  constructor(
+    private readonly tasksService: TasksService,
     private readonly authorization: TaskAuthorizationService,
-  ) { }
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -69,6 +70,14 @@ export class TasksController {
     return this.tasksService.findOne(id);
   }
 
+  @Get(':id/variables')
+  @ApiOperation({
+    summary: 'Consultar variables y documentos antecedentes de una tarea',
+  })
+  @ApiParam({ name: 'id' })
+  getVariables(@Param('id') id: string) {
+    return this.tasksService.getVariables(id);
+  }
 
   @Post(':id/claim')
   @ApiOperation({
@@ -93,7 +102,6 @@ export class TasksController {
     return this.authorization.unclaim(id, user);
   }
 
-
   @Post(':id/complete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -103,6 +111,4 @@ export class TasksController {
   complete(@Param('id') id: string, @Body() dto: CompleteTaskDto) {
     return this.tasksService.complete(id, dto);
   }
-
-
 }
