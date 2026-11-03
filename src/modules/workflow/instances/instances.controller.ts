@@ -17,6 +17,8 @@ import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { InstancesService } from './instances.service.js';
 import { StartProcessDto } from './dto/start-process.dto.js';
 import { QueryInstancesDto } from './dto/query-instances.dto.js';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator.js';
+import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @ApiTags('Workflow - Instances')
 @Controller('workflow/instances')
@@ -25,8 +27,8 @@ export class InstancesController {
 
   @Get()
   @ApiOperation({ summary: 'Listar instancias activas' })
-  findAll(@Query() query: QueryInstancesDto) {
-    return this.instancesService.findAll(query);
+  findAll(@Query() query: QueryInstancesDto, @CurrentUser() user?: AuthUser) {
+    return this.instancesService.findAll(query, user);
   }
 
   @Get(':id')
@@ -55,8 +57,8 @@ export class InstancesController {
 
   @Post()
   @ApiOperation({ summary: 'Iniciar proceso BPMN' })
-  create(@Body() dto: StartProcessDto) {
-    return this.instancesService.start(dto);
+  create(@Body() dto: StartProcessDto, @CurrentUser() user?: AuthUser) {
+    return this.instancesService.start(dto, user);
   }
 
   @Delete(':id')

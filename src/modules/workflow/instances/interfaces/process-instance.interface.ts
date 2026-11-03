@@ -8,6 +8,9 @@ export interface ProcessInstance {
   processDefinitionUrl: string;
   activityId: string | null;
   tenantId: string;
+  startUserId?: string | null;
+  startTime?: string | null;
+  registradoPor?: string | null;
 }
 
 export interface FlowablePage<T> {

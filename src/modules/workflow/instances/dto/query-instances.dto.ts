@@ -27,4 +27,9 @@ export class QueryInstancesDto {
   @IsOptional()
   @IsString()
   businessKey?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrar por usuario que inició el proceso' })
+  @IsOptional()
+  @IsString()
+  startedBy?: string;
 }

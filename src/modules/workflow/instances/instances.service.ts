@@ -8,6 +8,7 @@ import type {
   FlowablePage,
   ProcessInstance,
 } from './interfaces/process-instance.interface.js';
+import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @Injectable()
 export class InstancesService {
@@ -18,8 +19,18 @@ export class InstancesService {
     private readonly correlativesService: CorrelativesService,
   ) {}
 
-  findAll(query: QueryInstancesDto) {
-    return this.flowable.getInstancesFiltered<FlowablePage<ProcessInstance>>({
+  async findAll(query: QueryInstancesDto, user?: AuthUser) {
+    const isAdmin = user?.roles?.some((r: string) =>
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
+    );
+
+    // Si NO es admin, filtrar estrictamente por su usuario
+    let effectiveStartedBy = query.startedBy;
+    if (!isAdmin && user) {
+      effectiveStartedBy = user.username || user.id;
+    }
+
+    const flowableParams: Record<string, unknown> = {
       start: query.start,
       size: query.size,
       ...(query.processDefinitionKey && {
@@ -28,14 +39,19 @@ export class InstancesService {
       ...(query.businessKey && {
         businessKey: query.businessKey,
       }),
-    });
+      ...(effectiveStartedBy && {
+        startedBy: effectiveStartedBy,
+      }),
+    };
+
+    return this.flowable.getInstancesFiltered<FlowablePage<ProcessInstance>>(flowableParams);
   }
 
   findOne(id: string) {
     return this.flowable.getInstanceById<ProcessInstance>(id);
   }
 
-  async start(dto: StartProcessDto) {
+  async start(dto: StartProcessDto, user?: AuthUser) {
     // Generación 100% automática del correlativo oficial secuencial (ej: ADQ-001/2026)
     const correlativo = await this.correlativesService.generateNextCorrelative(
       dto.processDefinitionKey,
@@ -46,14 +62,27 @@ export class InstancesService {
     variables.codigoTramite = correlativo;
     variables.businessKey = correlativo;
 
+    const startUserName = user?.name || user?.username || 'Usuario';
+    const startUserId = user?.username || user?.id;
+
+    if (startUserId) {
+      variables.startUserId = startUserId;
+      variables.iniciador = startUserName;
+      variables.iniciadorUsername = user?.username;
+      variables.iniciadorId = user?.id;
+      variables.registradoPor = startUserName;
+      variables.solicitante = startUserName;
+    }
+
     this.logger.log(
-      `Iniciando proceso [${dto.processDefinitionKey}] con correlativo automático asignado: ${correlativo}`,
+      `Iniciando proceso [${dto.processDefinitionKey}] iniciado por [${startUserName}] con correlativo automático asignado: ${correlativo}`,
     );
 
     return this.flowable.startProcess<ProcessInstance>(
       dto.processDefinitionKey,
       variables,
       correlativo,
+      startUserId,
     );
   }
 

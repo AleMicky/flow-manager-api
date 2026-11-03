@@ -17,10 +17,12 @@ export class FlowableService {
     processDefinitionKey: string,
     variables: Record<string, unknown> = {},
     businessKey?: string,
+    startUserId?: string,
   ): Promise<T> {
     return this.client.post<T>('/runtime/process-instances', {
       processDefinitionKey,
       businessKey,
+      ...(startUserId ? { startUserId } : {}),
       variables: Object.entries(variables).map(([name, value]) => ({
         name,
         value,
