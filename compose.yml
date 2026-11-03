@@ -25,5 +25,26 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: dba-flow-redis
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+
+    volumes:
+      - dba-flow-redis-data:/data
+
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   dba-flow-postgres-data:
+  dba-flow-redis-data:
