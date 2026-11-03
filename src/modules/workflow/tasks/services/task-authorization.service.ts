@@ -104,10 +104,19 @@ export class TaskAuthorizationService {
     });
   }
 
+  private isTaskAssignedToUser(task: FlowableTask, user: AuthUser): boolean {
+    if (!task.assignee) return false;
+    return (
+      task.assignee === user.id ||
+      task.assignee === user.username ||
+      (Boolean(user.email) && task.assignee === user.email)
+    );
+  }
+
   async claim(taskId: string, user: AuthUser): Promise<FlowableTask> {
     const task = await this.getTask(taskId);
 
-    if (task.assignee === user.id) {
+    if (this.isTaskAssignedToUser(task, user)) {
       return task;
     }
 
@@ -115,7 +124,7 @@ export class TaskAuthorizationService {
       ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
     );
 
-    if (task.assignee && !isAdmin) {
+    if (task.assignee && !this.isTaskAssignedToUser(task, user) && !isAdmin) {
       throw new ConflictException(
         'La tarea ya fue reclamada por otro usuario',
       );
@@ -142,7 +151,7 @@ export class TaskAuthorizationService {
       ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
     );
 
-    if (task.assignee !== user.id && !isAdmin && !isDev) {
+    if (!this.isTaskAssignedToUser(task, user) && !isAdmin && !isDev) {
       throw new ForbiddenException(
         'Solo el asignado o un administrador puede liberar la tarea',
       );
@@ -162,7 +171,7 @@ export class TaskAuthorizationService {
       ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
     );
 
-    if (task.assignee !== user.id && !isAdmin && !isDev) {
+    if (!this.isTaskAssignedToUser(task, user) && !isAdmin && !isDev) {
       throw new ForbiddenException(
         'Debes reclamar la tarea antes de ejecutarla',
       );

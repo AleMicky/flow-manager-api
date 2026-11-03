@@ -24,18 +24,59 @@ export class TasksService {
     private readonly config: ConfigService,
   ) {}
 
-  findMine(user: AuthUser, query: QueryTasksDto) {
-    const params: Record<string, unknown> = {
-      start: query.start ?? 0,
-      size: query.size ?? 20,
-      assignee: user.id,
+  async findMine(user: AuthUser, query: QueryTasksDto) {
+    const start = query.start ?? 0;
+    const size = query.size ?? 20;
+
+    // Sincronizar y auto-asignar tareas huérfanas que tengan responsable configurado
+    await this.taskAssignments.autoAssignConfiguredTasks().catch(() => undefined);
+
+    const baseParams: Record<string, unknown> = {
       ...(query.processInstanceId && {
         processInstanceId: query.processInstanceId,
       }),
       ...(query.name && { name: query.name }),
     };
 
-    return this.flowableService.getTasks<FlowablePage<WorkflowTask>>(params);
+    const queries: Array<Promise<FlowablePage<WorkflowTask>>> = [
+      this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
+        ...baseParams,
+        start: 0,
+        size: 100,
+        assignee: user.id,
+      }),
+    ];
+
+    if (user.username && user.username !== user.id) {
+      queries.push(
+        this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
+          ...baseParams,
+          start: 0,
+          size: 100,
+          assignee: user.username,
+        }),
+      );
+    }
+
+    const results = await Promise.all(queries);
+    const uniqueMap = new Map<string, WorkflowTask>();
+    for (const res of results) {
+      for (const task of res.data ?? []) {
+        uniqueMap.set(task.id, task);
+      }
+    }
+
+    const all = Array.from(uniqueMap.values());
+    const paged = all.slice(start, start + size);
+
+    return {
+      data: paged,
+      total: all.length,
+      start,
+      size,
+      sort: 'createTime',
+      order: 'desc',
+    };
   }
 
   async findAvailable(
@@ -45,13 +86,29 @@ export class TasksService {
     const start = query.start ?? 0;
     const size = query.size ?? 20;
 
+    // Asegurar que las tareas con responsable directo configurado se auto-asignen antes de listar las disponibles
+    await this.taskAssignments.autoAssignConfiguredTasks().catch(() => undefined);
+
     const isDev = this.config.get<string>('NODE_ENV') !== 'production';
     const isAdmin = user.roles?.some((r) =>
       ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
     );
 
-    // En desarrollo o modo admin, mostrar todas las tareas sin asignar para pruebas
-    if ((isDev || isAdmin) && !query.candidateGroup) {
+    // En modo administrador, mostrar todas las tareas activas para supervisión global y acción directa
+    // (incluyendo las asignadas a otros usuarios como Elvis Cabrera)
+    if (isAdmin && !query.candidateGroup) {
+      return this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
+        start,
+        size,
+        ...(query.processInstanceId && {
+          processInstanceId: query.processInstanceId,
+        }),
+        ...(query.name && { name: query.name }),
+      });
+    }
+
+    // En desarrollo, mostrar todas las tareas sin asignar para pruebas
+    if (isDev && !query.candidateGroup) {
       return this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
         start,
         size,
@@ -192,7 +249,8 @@ export class TasksService {
   }
 
   async complete(id: string, dto: CompleteTaskDto) {
-    const variables = dto.variables ?? {};
+    const variables = { ...(dto.variables ?? {}) };
+
     await this.taskFormService.validateIfFormExists(id, variables);
     return this.flowableService.completeTask<void>(id, variables);
   }

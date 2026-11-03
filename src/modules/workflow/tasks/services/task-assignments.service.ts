@@ -68,6 +68,9 @@ export class TaskAssignmentsService implements OnModuleInit {
         `No se pudo verificar/crear tabla workflow_task_assignments automáticamente: ${String(error)}`,
       );
     }
+
+    // Auto-asignar tareas huérfanas/pendientes existentes en Flowable que ya tengan responsable configurado
+    await this.autoAssignConfiguredTasks().catch(() => undefined);
   }
 
   async findAll(processDefinitionKey?: string): Promise<WorkflowTaskAssignment[]> {
@@ -303,6 +306,102 @@ export class TaskAssignmentsService implements OnModuleInit {
     });
   }
 
+  /**
+   * Sincroniza los IdentityLinks y asigna automáticamente al responsable principal
+   * para todas las tareas activas de una instancia de proceso recién iniciada o en curso.
+   */
+  async syncProcessInstanceTasks(
+    processInstanceId: string,
+    processDefinitionKey: string,
+  ): Promise<void> {
+    try {
+      const page = await this.flowable.getTasks<FlowablePage<WorkflowTask>>({
+        processInstanceId,
+        size: 50,
+      });
+
+      const activeTasks = page.data ?? [];
+      if (activeTasks.length === 0) return;
+
+      const rules = await this.findAll(processDefinitionKey);
+      const rulesMap = new Map(rules.map((r) => [r.taskDefinitionKey, r]));
+
+      for (const task of activeTasks) {
+        if (!task.taskDefinitionKey) continue;
+        const rule = rulesMap.get(task.taskDefinitionKey);
+        if (!rule || !rule.active) continue;
+
+        for (const group of rule.candidateGroups) {
+          await this.flowable
+            .addTaskCandidateGroup(task.id, group)
+            .catch(() => undefined);
+        }
+        for (const userId of rule.candidateUsers) {
+          await this.flowable
+            .addTaskCandidateUser(task.id, userId)
+            .catch(() => undefined);
+        }
+
+        // Si la regla tiene un responsable directo configurado y la tarea no tiene asignado,
+        // asignar de inmediato al responsable para que aparezca en "Mis Tareas"
+        if (!task.assignee && rule.candidateUsers && rule.candidateUsers.length > 0) {
+          const designatedUser = rule.candidateUsers[0];
+          await this.flowable
+            .claimTask(task.id, designatedUser)
+            .catch(() => undefined);
+          this.logger.log(
+            `Tarea nueva [${task.id} - ${task.taskDefinitionKey}] asignada directamente al responsable [${designatedUser}]`,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron sincronizar IdentityLinks para la instancia ${processInstanceId}: ${String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Auto-asigna todas las tareas activas sin asignar que tengan responsables directos
+   * configurados en workflow_task_assignments.
+   */
+  async autoAssignConfiguredTasks(): Promise<void> {
+    try {
+      const allRules = await this.repository.find({ where: { active: true } });
+      const rulesWithUsers = allRules.filter(
+        (r) => r.candidateUsers && r.candidateUsers.length > 0,
+      );
+
+      for (const rule of rulesWithUsers) {
+        const designatedUser = rule.candidateUsers[0];
+        if (!designatedUser) continue;
+
+        const unassignedPage = await this.flowable
+          .getTasks<FlowablePage<WorkflowTask>>({
+            processDefinitionKey: rule.processDefinitionKey,
+            taskDefinitionKey: rule.taskDefinitionKey,
+            unassigned: true,
+            size: 50,
+          })
+          .catch(() => null);
+
+        const unassignedTasks = unassignedPage?.data ?? [];
+        for (const task of unassignedTasks) {
+          await this.flowable
+            .claimTask(task.id, designatedUser)
+            .catch(() => undefined);
+          this.logger.log(
+            `Tarea activa [${task.id} - ${task.name}] auto-asignada al responsable [${designatedUser}] según regla BPMN`,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Error al auto-asignar tareas configuradas: ${String(error)}`,
+      );
+    }
+  }
+
   private async syncActiveTasksInFlowable(
     assignment: WorkflowTaskAssignment,
   ): Promise<void> {
@@ -327,6 +426,19 @@ export class TaskAssignmentsService implements OnModuleInit {
           await this.flowable
             .addTaskCandidateUser(task.id, userId)
             .catch(() => undefined);
+        }
+
+        // Si la regla tiene un usuario responsable directo, asignarlo directamente a la tarea
+        if (assignment.candidateUsers && assignment.candidateUsers.length > 0) {
+          const designatedUser = assignment.candidateUsers[0];
+          if (!task.assignee || task.assignee !== designatedUser) {
+            await this.flowable
+              .claimTask(task.id, designatedUser)
+              .catch(() => undefined);
+            this.logger.log(
+              `Tarea activa [${task.id} - ${task.taskDefinitionKey}] reasignada al responsable [${designatedUser}]`,
+            );
+          }
         }
       }
     } catch (error) {

@@ -85,6 +85,18 @@ export class TaskFormService {
     taskId: string,
     data: Record<string, unknown>,
   ): Promise<void> {
+    const isRejectionOrObservation =
+      data.decision === 'REJECT' ||
+      data.decision === 'OBSERVE' ||
+      data.aprobado === false ||
+      data.estadoDecision === 'RECHAZADO' ||
+      data.estadoDecision === 'OBSERVADO';
+
+    // Si se rechaza u observa la solicitud, solo se exige el motivo u observación, no el formulario operativo
+    if (isRejectionOrObservation) {
+      return;
+    }
+
     const form = await this.formsService.findOptionalByTask(taskId);
     if (!form) {
       return;

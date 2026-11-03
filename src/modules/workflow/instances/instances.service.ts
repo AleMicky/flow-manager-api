@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FlowableService } from '../infrastructure/flowable/flowable.service.js';
 import { CorrelativesService } from '../processes/correlatives.service.js';
+import { TaskAssignmentsService } from '../tasks/services/task-assignments.service.js';
 import { StartProcessDto } from './dto/start-process.dto.js';
 import { QueryInstancesDto } from './dto/query-instances.dto.js';
 
@@ -17,6 +18,7 @@ export class InstancesService {
   constructor(
     private readonly flowable: FlowableService,
     private readonly correlativesService: CorrelativesService,
+    private readonly taskAssignments: TaskAssignmentsService,
   ) {}
 
   async findAll(query: QueryInstancesDto, user?: AuthUser) {
@@ -74,16 +76,45 @@ export class InstancesService {
       variables.solicitante = startUserName;
     }
 
+    if (dto.processDefinitionKey === 'prGaf08Adquisiciones') {
+      if (variables.montoEstimadoBs === undefined) {
+        variables.montoEstimadoBs = Number(variables.montoTotal || variables.monto || 0);
+      }
+      if (!variables.categoria) {
+        const monto = Number(variables.montoEstimadoBs) || 0;
+        variables.categoria = monto <= 150000 ? 'CATEGORIA_I' : 'CATEGORIA_II';
+      }
+      if (variables.aprobadoAlmacenes === undefined) {
+        variables.aprobadoAlmacenes = false;
+      }
+      if (variables.aprobadoPresupuesto === undefined) {
+        variables.aprobadoPresupuesto = false;
+      }
+      if (variables.aprobadoSuperior === undefined) {
+        variables.aprobadoSuperior = false;
+      }
+    }
+
     this.logger.log(
       `Iniciando proceso [${dto.processDefinitionKey}] iniciado por [${startUserName}] con correlativo automático asignado: ${correlativo}`,
     );
 
-    return this.flowable.startProcess<ProcessInstance>(
+    const instance = await this.flowable.startProcess<ProcessInstance>(
       dto.processDefinitionKey,
       variables,
       correlativo,
       startUserId,
     );
+
+    // Sincronizar inmediatamente los IdentityLinks de las tareas iniciales (ej. Verificación existencias y presupuesto en paralelo)
+    if (instance?.id) {
+      await this.taskAssignments.syncProcessInstanceTasks(
+        instance.id,
+        dto.processDefinitionKey,
+      );
+    }
+
+    return instance;
   }
 
   remove(id: string) {

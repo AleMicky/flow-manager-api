@@ -71,25 +71,39 @@ export class FormsService {
     try {
       const task = await this.flowable.getTaskById<FlowableTask>(taskId);
 
-      if (!task.processDefinitionId || !task.taskDefinitionKey) {
+      if (!task.taskDefinitionKey) {
         return null;
       }
 
-      const processDefinitionKey = task.processDefinitionId.split(':')[0];
+      const processDefinitionKey = task.processDefinitionId
+        ? task.processDefinitionId.split(':')[0]
+        : null;
+
+      const whereConditions: Array<Record<string, unknown>> = [
+        {
+          taskDefinitionKey: task.taskDefinitionKey,
+          active: true,
+        },
+      ];
+
+      if (task.processDefinitionId) {
+        whereConditions.unshift({
+          processDefinitionId: task.processDefinitionId,
+          taskDefinitionKey: task.taskDefinitionKey,
+          active: true,
+        });
+      }
+
+      if (processDefinitionKey) {
+        whereConditions.unshift({
+          processDefinitionKey,
+          taskDefinitionKey: task.taskDefinitionKey,
+          active: true,
+        });
+      }
 
       const form = await this.repository.findOne({
-        where: [
-          {
-            processDefinitionId: task.processDefinitionId,
-            taskDefinitionKey: task.taskDefinitionKey,
-            active: true,
-          },
-          {
-            processDefinitionKey,
-            taskDefinitionKey: task.taskDefinitionKey,
-            active: true,
-          },
-        ],
+        where: whereConditions,
       });
 
       return form;
