@@ -18,6 +18,8 @@ export class DefinitionsService {
         size: query.size,
         ...(query.name ? { name: query.name } : {}),
         ...(query.key ? { key: query.key } : {}),
+        ...(query.latest !== undefined ? { latest: query.latest } : {}),
+        ...(query.suspended !== undefined ? { suspended: query.suspended } : {}),
       },
     );
   }
@@ -32,6 +34,18 @@ export class DefinitionsService {
         key,
         latest: true,
       },
+    );
+  }
+
+  updateStatus(
+    id: string,
+    action: 'suspend' | 'activate',
+    includeProcessInstances = false,
+  ) {
+    return this.flowableService.updateDefinitionStatus<ProcessDefinition>(
+      id,
+      action,
+      includeProcessInstances,
     );
   }
 }

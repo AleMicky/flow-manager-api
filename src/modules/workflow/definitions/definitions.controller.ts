@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import type { Response } from 'express';
 
@@ -6,16 +17,16 @@ import { DefinitionsService } from './services/definitions.service.js';
 import { QueryDefinitionsDto } from './dto/query-definitions.dto.js';
 import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { DeployProcessDto } from './dto/deploy-process.dto.js';
+import { UpdateDefinitionStatusDto } from './dto/update-definition-status.dto.js';
 import { BpmnDeploymentService } from './services/bpmn-deployment.service.js';
 
 @ApiTags('Workflow - Definitions')
 @Controller('workflow/definitions')
 export class DefinitionsController {
-
   constructor(
     private readonly definitionsService: DefinitionsService,
     private readonly deployment: BpmnDeploymentService,
-  ) { }
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar procesos BPMN' })
@@ -36,6 +47,22 @@ export class DefinitionsController {
     return this.definitionsService.findOne(id);
   }
 
+  @Put(':id/status')
+  @Roles('workflow-admin', 'workflow-designer')
+  @ApiOperation({
+    summary: 'Activar o suspender (inactivar) una definición BPMN',
+  })
+  @ApiParam({ name: 'id', description: 'ID de la definición BPMN' })
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateDefinitionStatusDto,
+  ) {
+    return this.definitionsService.updateStatus(
+      id,
+      dto.action,
+      dto.includeProcessInstances,
+    );
+  }
 
   @Post('deploy')
   @Roles('workflow-admin', 'workflow-designer')
@@ -60,15 +87,9 @@ export class DefinitionsController {
   @ApiOperation({
     summary: 'Recuperar el XML de una definición BPMN',
   })
-  async xml(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
+  async xml(@Param('id') id: string, @Res() res: Response) {
     const xml = await this.deployment.getXml(id);
 
-    return res
-      .type('application/xml')
-      .send(xml);
+    return res.type('application/xml').send(xml);
   }
-
 }

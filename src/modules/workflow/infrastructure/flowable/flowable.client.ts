@@ -66,6 +66,15 @@ export class FlowableClient {
     }
   }
 
+  async put<T>(url: string, data: unknown): Promise<T> {
+    try {
+      const response = await this.http.put<T>(url, data);
+      return response.data;
+    } catch (error) {
+      return this.handleError(error);
+    }
+  }
+
   async delete<T>(url: string, params?: Record<string, unknown>): Promise<T> {
     try {
       const response = await this.http.delete<T>(url, {

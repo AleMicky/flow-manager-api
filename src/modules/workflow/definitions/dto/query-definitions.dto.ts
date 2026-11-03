@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
 
 export class QueryDefinitionsDto {
   @ApiPropertyOptional({
@@ -38,4 +38,28 @@ export class QueryDefinitionsDto {
   @IsOptional()
   @IsString()
   key?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar solo la última versión de cada proceso',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
+  })
+  @IsBoolean()
+  latest?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por estado suspendido (true) o activo (false)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return undefined;
+  })
+  @IsBoolean()
+  suspended?: boolean;
 }

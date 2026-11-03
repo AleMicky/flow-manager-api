@@ -53,6 +53,20 @@ export class FlowableService {
     );
   }
 
+  updateDefinitionStatus<T = unknown>(
+    id: string,
+    action: 'suspend' | 'activate',
+    includeProcessInstances = false,
+  ): Promise<T> {
+    return this.client.put<T>(
+      `/repository/process-definitions/${encodeURIComponent(id)}`,
+      {
+        action,
+        includeProcessInstances,
+      },
+    );
+  }
+
   getDefinitionXml(id: string): Promise<string> {
     return this.client.get<string>(
       `/repository/process-definitions/${encodeURIComponent(id)}/resourcedata`,
