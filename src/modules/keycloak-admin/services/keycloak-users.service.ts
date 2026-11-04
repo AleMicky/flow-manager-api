@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { KeycloakAdminClient } from '../keycloak-admin.client.js';
 import type {
@@ -96,6 +96,64 @@ export class KeycloakUsersService {
   async removeUserFromGroup(userId: string, groupId: string): Promise<void> {
     await this.client.delete(
       `/users/${encodeURIComponent(userId)}/groups/${encodeURIComponent(groupId)}`,
+    );
+  }
+
+  async assignRoleToUser(
+    userId: string,
+    roleName: string,
+    source: 'realm' | 'client' = 'realm',
+  ): Promise<void> {
+    if (source === 'client') {
+      const clientUuid = await this.client.resolveClientUuid();
+      if (!clientUuid) {
+        throw new NotFoundException('Cliente de Keycloak no encontrado');
+      }
+      const role = await this.client.get<KeycloakRoleRepresentation>(
+        `/clients/${encodeURIComponent(clientUuid)}/roles/${encodeURIComponent(roleName)}`,
+      );
+      await this.client.post(
+        `/users/${encodeURIComponent(userId)}/role-mappings/clients/${encodeURIComponent(clientUuid)}`,
+        [role],
+      );
+      return;
+    }
+
+    const role = await this.client.get<KeycloakRoleRepresentation>(
+      `/roles/${encodeURIComponent(roleName)}`,
+    );
+    await this.client.post(
+      `/users/${encodeURIComponent(userId)}/role-mappings/realm`,
+      [role],
+    );
+  }
+
+  async removeRoleFromUser(
+    userId: string,
+    roleName: string,
+    source: 'realm' | 'client' = 'realm',
+  ): Promise<void> {
+    if (source === 'client') {
+      const clientUuid = await this.client.resolveClientUuid();
+      if (!clientUuid) {
+        throw new NotFoundException('Cliente de Keycloak no encontrado');
+      }
+      const role = await this.client.get<KeycloakRoleRepresentation>(
+        `/clients/${encodeURIComponent(clientUuid)}/roles/${encodeURIComponent(roleName)}`,
+      );
+      await this.client.delete(
+        `/users/${encodeURIComponent(userId)}/role-mappings/clients/${encodeURIComponent(clientUuid)}`,
+        [role],
+      );
+      return;
+    }
+
+    const role = await this.client.get<KeycloakRoleRepresentation>(
+      `/roles/${encodeURIComponent(roleName)}`,
+    );
+    await this.client.delete(
+      `/users/${encodeURIComponent(userId)}/role-mappings/realm`,
+      [role],
     );
   }
 }

@@ -1,10 +1,12 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Post,
   Put,
   Query,
 } from '@nestjs/common';
@@ -12,11 +14,13 @@ import {
   ApiNoContentResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 
 import { KeycloakUsersService } from '../services/keycloak-users.service.js';
 import { QueryKeycloakUsersDto } from '../dto/query-keycloak-users.dto.js';
+import { AssignRoleToUserDto } from '../dto/manage-keycloak-role.dto.js';
 
 @ApiTags('Keycloak Admin - Users')
 @Controller('keycloak-admin/users')
@@ -86,6 +90,37 @@ export class KeycloakUsersController {
     @Param('groupId') groupId: string,
   ) {
     return this.usersService.removeUserFromGroup(id, groupId);
+  }
+
+  @Post(':id/roles')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse()
+  @ApiOperation({
+    summary: 'Asignar un rol a un usuario en Keycloak (realm o client)',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del usuario en Keycloak' })
+  assignRoleToUser(
+    @Param('id') id: string,
+    @Body() dto: AssignRoleToUserDto,
+  ) {
+    return this.usersService.assignRoleToUser(id, dto.roleName, dto.source);
+  }
+
+  @Delete(':id/roles/:roleName')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse()
+  @ApiOperation({
+    summary: 'Quitar un rol a un usuario en Keycloak',
+  })
+  @ApiParam({ name: 'id', description: 'UUID del usuario en Keycloak' })
+  @ApiParam({ name: 'roleName', description: 'Nombre del rol a desasignar' })
+  @ApiQuery({ name: 'source', required: false, enum: ['realm', 'client'] })
+  removeRoleFromUser(
+    @Param('id') id: string,
+    @Param('roleName') roleName: string,
+    @Query('source') source?: 'realm' | 'client',
+  ) {
+    return this.usersService.removeRoleFromUser(id, roleName, source ?? 'realm');
   }
 }
 

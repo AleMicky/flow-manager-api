@@ -1,12 +1,19 @@
 import {
+  Body,
   Controller,
   DefaultValuePipe,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
+  Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
+  ApiNoContentResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -15,6 +22,10 @@ import {
 
 import { KeycloakRolesService } from '../services/keycloak-roles.service.js';
 import { QueryKeycloakRolesDto } from '../dto/query-keycloak-roles.dto.js';
+import {
+  CreateKeycloakRoleDto,
+  UpdateKeycloakRoleDto,
+} from '../dto/manage-keycloak-role.dto.js';
 
 @ApiTags('Keycloak Admin - Roles')
 @Controller('keycloak-admin/roles')
@@ -59,6 +70,44 @@ export class KeycloakRolesController {
     @Query('max', new DefaultValuePipe(50), ParseIntPipe) max: number,
   ) {
     return this.rolesService.findUsersByRole(roleName, first, max);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Crear un nuevo rol en Keycloak (realm o client)',
+  })
+  createRole(@Body() dto: CreateKeycloakRoleDto) {
+    return this.rolesService.createRole(dto);
+  }
+
+  @Put(':roleName')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse()
+  @ApiOperation({
+    summary: 'Actualizar un rol existente en Keycloak',
+  })
+  @ApiParam({ name: 'roleName', description: 'Nombre actual del rol' })
+  updateRole(
+    @Param('roleName') roleName: string,
+    @Body() dto: UpdateKeycloakRoleDto,
+  ) {
+    return this.rolesService.updateRole(roleName, dto);
+  }
+
+  @Delete(':roleName')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse()
+  @ApiOperation({
+    summary: 'Eliminar un rol en Keycloak',
+  })
+  @ApiParam({ name: 'roleName', description: 'Nombre del rol a eliminar' })
+  @ApiQuery({ name: 'source', required: false, enum: ['realm', 'client'] })
+  deleteRole(
+    @Param('roleName') roleName: string,
+    @Query('source') source?: 'realm' | 'client',
+  ) {
+    return this.rolesService.deleteRole(roleName, source ?? 'realm');
   }
 }
 

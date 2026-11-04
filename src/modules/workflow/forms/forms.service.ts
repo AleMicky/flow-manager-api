@@ -67,6 +67,49 @@ export class FormsService {
     return form;
   }
 
+  async findByProcess(processDefinitionKey: string): Promise<WorkflowForm[]> {
+    return this.repository.find({
+      where: { processDefinitionKey },
+      order: { taskDefinitionKey: 'ASC' },
+    });
+  }
+
+  async findByProcessAndTask(
+    processDefinitionKey: string,
+    taskDefinitionKey: string,
+  ): Promise<WorkflowForm | null> {
+    return this.repository.findOne({
+      where: { processDefinitionKey, taskDefinitionKey },
+    });
+  }
+
+  async upsert(dto: CreateFormDto): Promise<WorkflowForm> {
+    const processKey = dto.processDefinitionKey;
+    const taskKey = dto.taskDefinitionKey;
+
+    let existing: WorkflowForm | null = null;
+    if (processKey && taskKey) {
+      existing = await this.repository.findOne({
+        where: { processDefinitionKey: processKey, taskDefinitionKey: taskKey },
+      });
+    }
+
+    if (existing) {
+      existing.title = dto.title;
+      existing.description = dto.description ?? null;
+      existing.schema = dto.schema;
+      if (dto.active !== undefined) {
+        existing.active = dto.active;
+      }
+      if (dto.processDefinitionId) {
+        existing.processDefinitionId = dto.processDefinitionId;
+      }
+      return this.repository.save(existing);
+    }
+
+    return this.create(dto);
+  }
+
   async findOptionalByTask(taskId: string): Promise<WorkflowForm | null> {
     try {
       const task = await this.flowable.getTaskById<FlowableTask>(taskId);

@@ -8,10 +8,76 @@ import type {
   KeycloakUserRepresentation,
 } from '../interfaces/keycloak-admin.interface.js';
 import type { QueryKeycloakRolesDto } from '../dto/query-keycloak-roles.dto.js';
+import type {
+  CreateKeycloakRoleDto,
+  UpdateKeycloakRoleDto,
+} from '../dto/manage-keycloak-role.dto.js';
 
 @Injectable()
 export class KeycloakRolesService {
   constructor(private readonly client: KeycloakAdminClient) {}
+
+  async createRole(dto: CreateKeycloakRoleDto): Promise<void> {
+    if (dto.source === 'client') {
+      const clientUuid = await this.client.resolveClientUuid();
+      if (!clientUuid) {
+        throw new NotFoundException('Cliente de Keycloak no encontrado');
+      }
+      await this.client.post(`/clients/${encodeURIComponent(clientUuid)}/roles`, {
+        name: dto.name,
+        description: dto.description,
+      });
+      return;
+    }
+
+    await this.client.post('/roles', {
+      name: dto.name,
+      description: dto.description,
+    });
+  }
+
+  async updateRole(
+    roleName: string,
+    dto: UpdateKeycloakRoleDto,
+  ): Promise<void> {
+    if (dto.source === 'client') {
+      const clientUuid = await this.client.resolveClientUuid();
+      if (!clientUuid) {
+        throw new NotFoundException('Cliente de Keycloak no encontrado');
+      }
+      await this.client.put(
+        `/clients/${encodeURIComponent(clientUuid)}/roles/${encodeURIComponent(roleName)}`,
+        {
+          name: dto.name ?? roleName,
+          description: dto.description,
+        },
+      );
+      return;
+    }
+
+    await this.client.put(`/roles/${encodeURIComponent(roleName)}`, {
+      name: dto.name ?? roleName,
+      description: dto.description,
+    });
+  }
+
+  async deleteRole(
+    roleName: string,
+    source: 'realm' | 'client' = 'realm',
+  ): Promise<void> {
+    if (source === 'client') {
+      const clientUuid = await this.client.resolveClientUuid();
+      if (!clientUuid) {
+        throw new NotFoundException('Cliente de Keycloak no encontrado');
+      }
+      await this.client.delete(
+        `/clients/${encodeURIComponent(clientUuid)}/roles/${encodeURIComponent(roleName)}`,
+      );
+      return;
+    }
+
+    await this.client.delete(`/roles/${encodeURIComponent(roleName)}`);
+  }
 
   async findRealmRoles(
     query?: QueryKeycloakRolesDto,
