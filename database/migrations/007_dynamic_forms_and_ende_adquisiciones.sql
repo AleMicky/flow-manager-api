@@ -375,9 +375,9 @@ VALUES (
   'Validación financiera del proceso para contrataciones mayores a Bs. 150.000.',
   '{
     "type": "object",
-    "required": ["voboFinanciero", "obsFinanciero"],
+    "required": ["aprobadoFinanciero", "obsFinanciero"],
     "properties": {
-      "voboFinanciero": {
+      "aprobadoFinanciero": {
         "type": "boolean",
         "title": "VoBo Administrativo Financiero Otorgado"
       },
@@ -401,9 +401,9 @@ VALUES (
   'Validación y dictamen legal para contrataciones mayores a Bs. 150.000.',
   '{
     "type": "object",
-    "required": ["voboLegal", "obsLegal"],
+    "required": ["aprobadoLegal", "obsLegal"],
     "properties": {
-      "voboLegal": {
+      "aprobadoLegal": {
         "type": "boolean",
         "title": "VoBo Legal Otorgado"
       },

@@ -11,6 +11,7 @@ import { FlowableModule } from '../infrastructure/flowable/flowable.module.js';
 import { AuthModule } from '../../auth/auth.module.js';
 import { KeycloakAdminModule } from '../../keycloak-admin/keycloak-admin.module.js';
 import { FormsModule } from '../forms/forms.module.js';
+import { NotificationsModule } from '../../notifications/notifications.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { FormsModule } from '../forms/forms.module.js';
     AuthModule,
     KeycloakAdminModule,
     FormsModule,
+    NotificationsModule,
   ],
   controllers: [TasksController, TaskAssignmentsController],
   providers: [

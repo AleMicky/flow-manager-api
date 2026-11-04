@@ -108,7 +108,11 @@ export class TasksController {
     summary: 'Completar una tarea',
   })
   @ApiNoContentResponse()
-  complete(@Param('id') id: string, @Body() dto: CompleteTaskDto) {
-    return this.tasksService.complete(id, dto);
+  complete(
+    @Param('id') id: string,
+    @Body() dto: CompleteTaskDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasksService.complete(id, dto, user);
   }
 }

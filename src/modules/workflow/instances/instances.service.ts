@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { FlowableService } from '../infrastructure/flowable/flowable.service.js';
 import { CorrelativesService } from '../processes/correlatives.service.js';
 import { TaskAssignmentsService } from '../tasks/services/task-assignments.service.js';
+import { WorkflowNotificationsService } from '../../notifications/workflow-notifications.service.js';
 import { StartProcessDto } from './dto/start-process.dto.js';
 import { QueryInstancesDto } from './dto/query-instances.dto.js';
 
@@ -19,6 +20,7 @@ export class InstancesService {
     private readonly flowable: FlowableService,
     private readonly correlativesService: CorrelativesService,
     private readonly taskAssignments: TaskAssignmentsService,
+    private readonly workflowNotifications: WorkflowNotificationsService,
   ) {}
 
   async findAll(query: QueryInstancesDto, user?: AuthUser) {
@@ -112,6 +114,26 @@ export class InstancesService {
         instance.id,
         dto.processDefinitionKey,
       );
+
+      // Notificación institucional por correo electrónico según normativa PR-GAF-08
+      if (dto.processDefinitionKey === 'prGaf08Adquisiciones') {
+        this.workflowNotifications
+          .notifyProcessStarted({
+            processInstanceId: instance.id,
+            processDefinitionKey: dto.processDefinitionKey,
+            correlativo,
+            objetoContratacion: String(variables.objetoContratacion || ''),
+            montoEstimadoBs: Number(variables.montoEstimadoBs || 0),
+            categoria: String(variables.categoria || ''),
+            solicitante: startUserName,
+            solicitanteEmail: user?.email,
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Error al disparar notificación de inicio: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+      }
     }
 
     return instance;

@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { FlowableService } from '../infrastructure/flowable/flowable.service.js';
 import { TaskAssignmentsService } from './services/task-assignments.service.js';
 import { TaskFormService } from '../forms/services/task-form.service.js';
+import { WorkflowNotificationsService } from '../../notifications/workflow-notifications.service.js';
 
 import { QueryTasksDto } from './dto/query-tasks.dto.js';
 import { ClaimTaskDto } from './dto/claim-task.dto.js';
@@ -17,10 +18,13 @@ import type { AuthUser } from '../../auth/interfaces/auth-user.interface.js';
 
 @Injectable()
 export class TasksService {
+  private readonly logger = new Logger(TasksService.name);
+
   constructor(
     private readonly flowableService: FlowableService,
     private readonly taskAssignments: TaskAssignmentsService,
     private readonly taskFormService: TaskFormService,
+    private readonly workflowNotifications: WorkflowNotificationsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -248,11 +252,164 @@ export class TasksService {
     return this.flowableService.unclaimTask<void>(id);
   }
 
-  async complete(id: string, dto: CompleteTaskDto) {
+  async complete(id: string, dto: CompleteTaskDto, user?: AuthUser) {
     const variables = { ...(dto.variables ?? {}) };
 
     await this.taskFormService.validateIfFormExists(id, variables);
-    return this.flowableService.completeTask<void>(id, variables);
+
+    // Obtener datos de la tarea antes de completarla
+    const task = await this.findOne(id).catch(() => null);
+
+    const result = await this.flowableService.completeTask<void>(id, variables);
+
+    // Disparar notificaciones correspondientes según la normativa PR-GAF-08
+    if (task && task.processInstanceId) {
+      this.handleTaskCompletedNotifications(task, variables, user).catch((err) =>
+        this.logger.warn(
+          `Error en notificación al completar tarea [${task.name}]: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
+
+    return result;
+  }
+
+  private async handleTaskCompletedNotifications(
+    task: WorkflowTask,
+    completedVars: Record<string, unknown>,
+    user?: AuthUser,
+  ) {
+    if (!task.processInstanceId) return;
+    const processInstanceId: string = task.processInstanceId;
+
+    try {
+      // Obtener variables acumuladas de la instancia de proceso
+      const instVars = await this.flowableService
+        .getInstanceVariables<Array<{ name: string; value: unknown }>>(
+          processInstanceId,
+        )
+        .catch(() => []);
+
+      const varsMap: Record<string, unknown> = {};
+      if (Array.isArray(instVars)) {
+        for (const item of instVars) {
+          varsMap[item.name] = item.value;
+        }
+      }
+      // Sobrescribir con las variables recién enviadas
+      Object.assign(varsMap, completedVars);
+
+      const correlativo = String(
+        varsMap.correlativo || varsMap.codigoTramite || varsMap.businessKey || processInstanceId,
+      );
+      const objetoContratacion = String(varsMap.objetoContratacion || '');
+      const montoEstimadoBs = Number(varsMap.montoEstimadoBs || varsMap.montoTotal || 0);
+      const categoria = String(varsMap.categoria || 'CATEGORIA_I');
+      const solicitante = String(varsMap.solicitante || varsMap.iniciador || 'Unidad Solicitante');
+      const solicitanteEmail = String(varsMap.solicitanteEmail || varsMap.iniciadorEmail || '');
+      const encargadoContratacionUserId = String(
+        varsMap.encargadoContratacionUserId || '',
+      );
+
+      const ctx = {
+        processInstanceId,
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        correlativo,
+        objetoContratacion,
+        montoEstimadoBs,
+        categoria,
+        solicitante,
+        solicitanteEmail,
+        taskDefinitionKey: task.taskDefinitionKey ?? undefined,
+        taskName: task.name ?? undefined,
+        comentarios: String(
+          completedVars.comentarios ||
+            completedVars.obsAlmacenes ||
+            completedVars.obsPresupuesto ||
+            completedVars.obsSuperior ||
+            completedVars.obsFinanciero ||
+            completedVars.obsLegal ||
+            completedVars.obsGaf ||
+            completedVars.justificacion ||
+            '',
+        ),
+        decision: String(completedVars.decisionFinal || completedVars.decision || ''),
+        comiteEvaluador: String(varsMap.comiteEvaluador || ''),
+        responsableRecepcion: String(varsMap.responsableRecepcion || ''),
+        encargadoContratacionUserId,
+      };
+
+      const taskKey = task.taskDefinitionKey;
+
+      // 1. Verificación de Existencias o Presupuesto
+      if (taskKey === 'taskVerificarExistencias' || taskKey === 'taskVerificarPresupuesto') {
+        const alm = varsMap.aprobadoAlmacenes;
+        const pre = varsMap.aprobadoPresupuesto;
+
+        if (alm === false || pre === false) {
+          await this.workflowNotifications.notifyObservacionIntermedia(
+            ctx,
+            'Verificación de Existencias / Presupuesto',
+          );
+        } else if (alm === true && pre === true) {
+          await this.workflowNotifications.notifyVerificacionesCompletadas(ctx);
+        }
+      }
+
+      // 2. Asignación de Encargado de Contratación
+      else if (taskKey === 'taskAsignarEncargado') {
+        await this.workflowNotifications.notifyEncargadoAsignado(ctx);
+      }
+
+      // 3. Revisión por Encargado -> Remisión a Superior
+      else if (taskKey === 'taskRevisarSolicitud') {
+        await this.workflowNotifications.notifyRemisionSuperior(ctx);
+      }
+
+      // 4. Aprobación Inmediato Superior
+      else if (taskKey === 'taskAprobacionSuperior') {
+        if (varsMap.aprobadoSuperior === false) {
+          await this.workflowNotifications.notifyObservacionIntermedia(
+            ctx,
+            'Aprobación Inmediato Superior',
+          );
+        }
+      }
+
+      // 5. Vistos Buenos Financiero / Legal (Cat. II, III y Especial)
+      else if (taskKey === 'taskVoboFinanciero' || taskKey === 'taskVoboLegal') {
+        const fin = varsMap.aprobadoFinanciero ?? varsMap.voboFinanciero;
+        const leg = varsMap.aprobadoLegal ?? varsMap.voboLegal;
+
+        if (fin === false || leg === false) {
+          await this.workflowNotifications.notifyObservacionIntermedia(
+            ctx,
+            'Vistos Buenos Financiero / Legal',
+          );
+        } else if (fin === true && leg === true) {
+          await this.workflowNotifications.notifyVobosCompletados(ctx);
+        }
+      }
+
+      // 6. Revisión GAF
+      else if (taskKey === 'taskGafCat1' || taskKey === 'taskGafCat2') {
+        if (varsMap.aprobadoGaf === false) {
+          await this.workflowNotifications.notifyObservacionIntermedia(
+            ctx,
+            'Revisión Gerencia Administrativa Financiera',
+          );
+        }
+      }
+
+      // 7. Decisión Final (Gerente de Área o Gerente General)
+      else if (taskKey === 'taskDecisionFinalCat1' || taskKey === 'taskDecisionFinalCat2') {
+        await this.workflowNotifications.notifyDecisionFinal(ctx);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Error procesando notificaciones posteriores a la tarea: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async getVariables(id: string): Promise<Record<string, unknown>> {

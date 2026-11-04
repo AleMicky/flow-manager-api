@@ -13,6 +13,7 @@ import { WorkflowModule } from './modules/workflow/workflow.module.js';
 import { FlowableModule } from './modules/workflow/infrastructure/flowable/flowable.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { KeycloakAdminModule } from './modules/keycloak-admin/keycloak-admin.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { KeycloakAdminModule } from './modules/keycloak-admin/keycloak-admin.mod
 
     AuthModule,
     KeycloakAdminModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

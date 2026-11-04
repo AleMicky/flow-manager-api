@@ -117,7 +117,7 @@
 
     <!-- RAMA CATEGORÍA I (Hasta Bs. 150.000) -->
     <sequenceFlow id="flujoCat1" name="Categoría I (Hasta Bs. 150.000)" sourceRef="gatewayCategoria" targetRef="taskGafCat1">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${categoria == 'CATEGORIA_I' || montoEstimadoBs <= 150000}]]></conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${categoria == 'CATEGORIA_I' || (categoria == null && (montoEstimadoBs == null || montoEstimadoBs <= 150000))}]]></conditionExpression>
     </sequenceFlow>
 
     <userTask
@@ -127,7 +127,17 @@
       <documentation>Autorización GAF Categoría I para trámite ${correlativo}</documentation>
     </userTask>
 
-    <sequenceFlow id="flujoGaf1ToDec1" sourceRef="taskGafCat1" targetRef="taskDecisionFinalCat1" />
+    <sequenceFlow id="flujoGaf1ToEval" sourceRef="taskGafCat1" targetRef="evalGafCat1" />
+
+    <exclusiveGateway id="evalGafCat1" name="¿Aprobado por GAF (Cat. I)?" />
+
+    <sequenceFlow id="flujoGaf1Aprobado" name="GAF Aprobado" sourceRef="evalGafCat1" targetRef="taskDecisionFinalCat1">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoGaf == true}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoGaf1Rechazado" name="GAF Observado/Rechazado (Retorna a Solicitante)" sourceRef="evalGafCat1" targetRef="taskAjustarSolicitud">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoGaf == false}]]></conditionExpression>
+    </sequenceFlow>
 
     <userTask
       id="taskDecisionFinalCat1"
@@ -138,9 +148,9 @@
 
     <sequenceFlow id="flujoDec1ToEval" sourceRef="taskDecisionFinalCat1" targetRef="evalDecisionFinal" />
 
-    <!-- RAMA CATEGORÍAS II, III Y ESPECIAL (> Bs. 150.000) -->
-    <sequenceFlow id="flujoCat23" name="Categorías II, III y Especial (> Bs. 150.000)" sourceRef="gatewayCategoria" targetRef="forkVobos">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${categoria != 'CATEGORIA_I' && montoEstimadoBs > 150000}]]></conditionExpression>
+    <!-- RAMA CATEGORÍAS II, III Y ESPECIAL (> Bs. 150.000 o Excepcional) -->
+    <sequenceFlow id="flujoCat23" name="Categorías II, III y Especial" sourceRef="gatewayCategoria" targetRef="forkVobos">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${categoria == 'CATEGORIA_II' || categoria == 'CATEGORIA_III' || categoria == 'CATEGORIA_ESPECIAL' || (categoria != 'CATEGORIA_I' && montoEstimadoBs > 150000)}]]></conditionExpression>
     </sequenceFlow>
 
     <parallelGateway id="forkVobos" name="Inicio Vistos Buenos Simultáneos" />
@@ -170,11 +180,11 @@
     <exclusiveGateway id="evalVobos" name="¿VoBos Aprobados?" />
 
     <sequenceFlow id="flujoVobosAprobados" name="Ambos VoBo Aprobados" sourceRef="evalVobos" targetRef="taskGafCat2">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoFinanciero == true && aprobadoLegal == true}]]></conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${(aprobadoFinanciero == true || voboFinanciero == true) && (aprobadoLegal == true || voboLegal == true)}]]></conditionExpression>
     </sequenceFlow>
 
     <sequenceFlow id="flujoVobosObservados" name="Observado en VoBo Financiero o Legal (Retorna para subsanación)" sourceRef="evalVobos" targetRef="taskRevisarSolicitud">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoFinanciero == false || aprobadoLegal == false}]]></conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoFinanciero == false || voboFinanciero == false || aprobadoLegal == false || voboLegal == false}]]></conditionExpression>
     </sequenceFlow>
 
     <userTask
@@ -184,7 +194,17 @@
       <documentation>Aprobación GAF y designación de comisiones para trámite ${correlativo}</documentation>
     </userTask>
 
-    <sequenceFlow id="flujoGaf2ToDec2" sourceRef="taskGafCat2" targetRef="taskDecisionFinalCat2" />
+    <sequenceFlow id="flujoGaf2ToEval" sourceRef="taskGafCat2" targetRef="evalGafCat2" />
+
+    <exclusiveGateway id="evalGafCat2" name="¿Aprobado por GAF (Cat. II/III)?" />
+
+    <sequenceFlow id="flujoGaf2Aprobado" name="GAF Aprobado" sourceRef="evalGafCat2" targetRef="taskDecisionFinalCat2">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoGaf == true}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoGaf2Rechazado" name="GAF Observado/Rechazado (Retorna para subsanación)" sourceRef="evalGafCat2" targetRef="taskRevisarSolicitud">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoGaf == false}]]></conditionExpression>
+    </sequenceFlow>
 
     <userTask
       id="taskDecisionFinalCat2"
@@ -206,9 +226,19 @@
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${decisionFinal == 'OBSERVADO'}]]></conditionExpression>
     </sequenceFlow>
 
-    <sequenceFlow id="flujoDecisionRechazado" name="Rechazado y Archivado" sourceRef="evalDecisionFinal" targetRef="finRechazado">
+    <sequenceFlow id="flujoDecisionRechazado" name="Rechazado (Solicitud de Informes Técnico y Legal)" sourceRef="evalDecisionFinal" targetRef="taskInformesCierre">
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${decisionFinal == 'RECHAZADO'}]]></conditionExpression>
     </sequenceFlow>
+
+    <!-- ETAPA FINAL DE CANCELACIÓN Y ARCHIVO -->
+    <userTask
+      id="taskInformesCierre"
+      name="Adjuntar Informes Técnico y Legal de Cancelación - ${correlativo}"
+      flowable:assignee="${encargadoContratacionUserId}">
+      <documentation>Adjuntar informes técnico y legal motivados tras rechazo para archivo definitivo del trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoInformesToFin" sourceRef="taskInformesCierre" targetRef="finRechazado" />
 
     <endEvent id="finAprobado" name="Fin - Aprobado para Contratación" />
     <endEvent id="finRechazado" name="Fin - Rechazado y Archivado" />
