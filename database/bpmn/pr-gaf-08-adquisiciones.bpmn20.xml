@@ -46,11 +46,31 @@
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoAlmacenes == true && aprobadoPresupuesto == true}]]></conditionExpression>
     </sequenceFlow>
 
-    <sequenceFlow id="flujoVerifRechazadas" name="Rechazado en Almacenes o Presupuesto" sourceRef="evalVerificaciones" targetRef="finRechazadoVerificacion">
+    <sequenceFlow id="flujoVerifObservadas" name="Observado/Rechazado en Almacenes o Presupuesto (Retorna a Solicitante)" sourceRef="evalVerificaciones" targetRef="taskAjustarSolicitud">
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoAlmacenes == false || aprobadoPresupuesto == false}]]></conditionExpression>
     </sequenceFlow>
 
-    <endEvent id="finRechazadoVerificacion" name="Fin - Rechazado en Verificación" />
+    <!-- ETAPA DE SUBSANACIÓN / AJUSTE POR LA UNIDAD SOLICITANTE -->
+    <userTask
+      id="taskAjustarSolicitud"
+      name="Subsanar / Ajustar Solicitud - ${correlativo}"
+      flowable:assignee="${initiator}">
+      <documentation>Subsanación de observaciones señaladas en verificaciones o por el inmediato superior para el trámite ${correlativo}</documentation>
+    </userTask>
+
+    <sequenceFlow id="flujoAjusteToEval" sourceRef="taskAjustarSolicitud" targetRef="evalAjusteSolicitante" />
+
+    <exclusiveGateway id="evalAjusteSolicitante" name="¿Reenviar o Cancelar?" />
+
+    <sequenceFlow id="flujoReenviarVerificaciones" name="Reenviar a Verificaciones" sourceRef="evalAjusteSolicitante" targetRef="forkVerificaciones">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${accionSolicitante == 'REENVIAR' || accionSolicitante == null}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoCancelarSolicitante" name="Desistir / Cancelar Solicitud" sourceRef="evalAjusteSolicitante" targetRef="finCanceladoSolicitante">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${accionSolicitante == 'CANCELAR'}]]></conditionExpression>
+    </sequenceFlow>
+
+    <endEvent id="finCanceladoSolicitante" name="Fin - Trámite Cancelado por Solicitante" />
 
     <!-- 3. ASIGNACIÓN ENCARGADO DE ADQUISICIONES -->
     <userTask
@@ -88,11 +108,9 @@
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoSuperior == true}]]></conditionExpression>
     </sequenceFlow>
 
-    <sequenceFlow id="flujoSuperiorRechazado" name="Rechazado por Superior" sourceRef="evalSuperior" targetRef="finRechazadoSuperior">
+    <sequenceFlow id="flujoSuperiorRechazado" name="Rechazado/Observado por Superior (Retorna a Solicitante)" sourceRef="evalSuperior" targetRef="taskAjustarSolicitud">
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoSuperior == false}]]></conditionExpression>
     </sequenceFlow>
-
-    <endEvent id="finRechazadoSuperior" name="Fin - Rechazado por Inmediato Superior" />
 
     <!-- BIFURCACIÓN SEGÚN CATEGORÍA / NIVEL DE MATERIALIDAD -->
     <exclusiveGateway id="gatewayCategoria" name="Bifurcación por Categoría / Materialidad" />
@@ -147,7 +165,17 @@
 
     <parallelGateway id="joinVobos" name="Fin Vistos Buenos Simultáneos" />
 
-    <sequenceFlow id="flujoVobosToGaf2" sourceRef="joinVobos" targetRef="taskGafCat2" />
+    <sequenceFlow id="flujoJoinVobosToEval" sourceRef="joinVobos" targetRef="evalVobos" />
+
+    <exclusiveGateway id="evalVobos" name="¿VoBos Aprobados?" />
+
+    <sequenceFlow id="flujoVobosAprobados" name="Ambos VoBo Aprobados" sourceRef="evalVobos" targetRef="taskGafCat2">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoFinanciero == true && aprobadoLegal == true}]]></conditionExpression>
+    </sequenceFlow>
+
+    <sequenceFlow id="flujoVobosObservados" name="Observado en VoBo Financiero o Legal (Retorna para subsanación)" sourceRef="evalVobos" targetRef="taskRevisarSolicitud">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${aprobadoFinanciero == false || aprobadoLegal == false}]]></conditionExpression>
+    </sequenceFlow>
 
     <userTask
       id="taskGafCat2"

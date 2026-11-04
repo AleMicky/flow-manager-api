@@ -4,10 +4,13 @@ import {
     BadRequestException,
     Injectable,
     Logger,
+    OnModuleInit,
 } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { DeployProcessDto } from '../dto/deploy-process.dto.js';
 import { BpmnValidatorService } from './bpmn-validator.service.js';
@@ -36,7 +39,7 @@ export interface FlowablePage<T> {
 }
 
 @Injectable()
-export class BpmnDeploymentService {
+export class BpmnDeploymentService implements OnModuleInit {
     private readonly logger = new Logger(
         BpmnDeploymentService.name,
     );
@@ -58,6 +61,65 @@ export class BpmnDeploymentService {
         }
 
         this.baseUrl = rawUrl.replace(/\/+$/, '');
+    }
+
+    async onModuleInit(): Promise<void> {
+        try {
+            await this.autoDeployDefaultBpmnFiles();
+        } catch (error) {
+            this.logger.warn(
+                `Auto-sincronización de BPMN omitida: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+        }
+    }
+
+    /**
+     * Sincroniza automáticamente los archivos BPMN oficiales de database/bpmn
+     * sobre el mismo proceso en Flowable, versionándolo sin duplicar claves.
+     */
+    private async autoDeployDefaultBpmnFiles(): Promise<void> {
+        const potentialPaths = [
+            path.resolve(process.cwd(), 'database/bpmn/pr-gaf-08-adquisiciones.bpmn20.xml'),
+            path.resolve(process.cwd(), 'flow-manager-api/database/bpmn/pr-gaf-08-adquisiciones.bpmn20.xml'),
+        ];
+
+        const bpmnPath = potentialPaths.find((p) => fs.existsSync(p));
+        if (!bpmnPath) {
+            return;
+        }
+
+        const xml = fs.readFileSync(bpmnPath, 'utf-8');
+        const processKey = 'prGaf08Adquisiciones';
+
+        let needsDeploy = true;
+        try {
+            const versions = await this.findVersions(processKey);
+            if (versions?.data?.length) {
+                const latest = versions.data[0];
+                const currentXml = await this.getXml(latest.id);
+                // Si la versión activa en Flowable ya incluye taskAjustarSolicitud, ya está sincronizada
+                if (currentXml && currentXml.includes('taskAjustarSolicitud')) {
+                    needsDeploy = false;
+                }
+            }
+        } catch {
+            needsDeploy = true;
+        }
+
+        if (needsDeploy) {
+            this.logger.log(
+                `Sincronizando automáticamente BPMN actualizado sobre proceso existente: ${processKey}...`,
+            );
+            await this.deploy({
+                name: 'pr-gaf-08-adquisiciones',
+                xml,
+            });
+            this.logger.log(
+                `BPMN ${processKey} actualizado exitosamente a la última versión en Flowable.`,
+            );
+        }
     }
 
     private get client() {

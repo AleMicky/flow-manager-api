@@ -48,7 +48,13 @@ export class DefinitionsController {
   }
 
   @Put(':id/status')
-  @Roles('workflow-admin', 'workflow-designer')
+  @Roles(
+    'workflow-admin',
+    'workflow-designer',
+    'admin',
+    'realm-admin',
+    'superadmin',
+  )
   @ApiOperation({
     summary: 'Activar o suspender (inactivar) una definición BPMN',
   })
@@ -65,7 +71,13 @@ export class DefinitionsController {
   }
 
   @Post('deploy')
-  @Roles('workflow-admin', 'workflow-designer')
+  @Roles(
+    'workflow-admin',
+    'workflow-designer',
+    'admin',
+    'realm-admin',
+    'superadmin',
+  )
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Publicar una definición BPMN en Flowable',

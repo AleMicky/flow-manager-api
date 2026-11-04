@@ -187,6 +187,43 @@ VALUES (
   title = EXCLUDED.title,
   schema = EXCLUDED.schema;
 
+-- 7.2.1 Subsanación y Ajuste de Solicitud (Unidad Solicitante / Initiator)
+INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
+VALUES (
+  'prGaf08Adquisiciones',
+  'taskAjustarSolicitud',
+  'Subsanación y Ajuste de Solicitud (Unidad Solicitante)',
+  'Ajuste, corrección documental o desistimiento por parte del solicitante tras observaciones.',
+  '{
+    "type": "object",
+    "required": ["accionSolicitante", "justificacionAjuste"],
+    "properties": {
+      "accionSolicitante": {
+        "type": "string",
+        "title": "Acción a Tomar",
+        "enum": ["REENVIAR", "CANCELAR"],
+        "enumNames": [
+          "Reenviar solicitud con ajustes / subsanaciones",
+          "Desistir y cancelar proceso de adquisición"
+        ],
+        "default": "REENVIAR"
+      },
+      "justificacionAjuste": {
+        "type": "string",
+        "title": "Detalle de modificaciones o subsanaciones realizadas"
+      },
+      "documentoAjustado": {
+        "type": "string",
+        "title": "ET, TDR o Cotización Subsanada (PDF / Enlace)",
+        "description": "Adjunto actualizado si corresponde"
+      }
+    }
+  }'::jsonb,
+  true
+) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
+  title = EXCLUDED.title,
+  schema = EXCLUDED.schema;
+
 -- 7.3 Asignación de Encargado de Contratación
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
@@ -455,6 +492,7 @@ INSERT INTO workflow_task_assignments ("processDefinitionKey", "taskDefinitionKe
 VALUES
   ('prGaf08Adquisiciones', 'taskVerificarExistencias', 'Verificación de existencias / activos', '["encargado-almacenes"]'::jsonb, '[]'::jsonb, true),
   ('prGaf08Adquisiciones', 'taskVerificarPresupuesto', 'Verificación de presupuesto', '["encargado-presupuestos"]'::jsonb, '[]'::jsonb, true),
+  ('prGaf08Adquisiciones', 'taskAjustarSolicitud', 'Subsanación / Ajuste de Solicitud', '["unidad-solicitante"]'::jsonb, '[]'::jsonb, true),
   ('prGaf08Adquisiciones', 'taskAsignarEncargado', 'Asignación Encargado de Adquisiciones', '["jefe-adquisiciones"]'::jsonb, '[]'::jsonb, true),
   ('prGaf08Adquisiciones', 'taskRevisarSolicitud', 'Revisión solicitud de adquisición', '[]'::jsonb, '[]'::jsonb, true),
   ('prGaf08Adquisiciones', 'taskAprobacionSuperior', 'Aprobación Inmediato Superior', '["jefe-inmediato-superior"]'::jsonb, '[]'::jsonb, true),
