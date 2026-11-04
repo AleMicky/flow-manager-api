@@ -28,7 +28,7 @@ export class QueryKeycloakGroupsDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(1000)
   max: number = 50;
 }
 

@@ -61,7 +61,7 @@ export class QueryKeycloakUsersDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(500)
+  @Max(5000)
   max: number = 20;
 }
 

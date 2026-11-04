@@ -13,7 +13,12 @@
     <!-- 1. EVENTO DE INICIO -->
     <startEvent id="inicioSolicitud" name="Registro de Solicitud de Adquisición" flowable:initiator="initiator" />
 
-    <sequenceFlow id="flujo1" sourceRef="inicioSolicitud" targetRef="forkVerificaciones" />
+    <sequenceFlow id="flujo1" sourceRef="inicioSolicitud" targetRef="mergeVerificaciones" />
+
+    <!-- CONVERGENCIA DE INICIO O REENVÍO TRAS SUBSANACIÓN -->
+    <exclusiveGateway id="mergeVerificaciones" name="Convergencia a Verificaciones" />
+
+    <sequenceFlow id="flujoMergeToForkVerif" sourceRef="mergeVerificaciones" targetRef="forkVerificaciones" />
 
     <!-- 2. FASES SIMULTÁNEAS DE VERIFICACIÓN -->
     <parallelGateway id="forkVerificaciones" name="Inicio Verificaciones Simultáneas" />
@@ -62,7 +67,7 @@
 
     <exclusiveGateway id="evalAjusteSolicitante" name="¿Reenviar o Cancelar?" />
 
-    <sequenceFlow id="flujoReenviarVerificaciones" name="Reenviar a Verificaciones" sourceRef="evalAjusteSolicitante" targetRef="forkVerificaciones">
+    <sequenceFlow id="flujoReenviarVerificaciones" name="Reenviar a Verificaciones" sourceRef="evalAjusteSolicitante" targetRef="mergeVerificaciones">
       <conditionExpression xsi:type="tFormalExpression"><![CDATA[${accionSolicitante == 'REENVIAR' || accionSolicitante == null}]]></conditionExpression>
     </sequenceFlow>
 

@@ -37,6 +37,19 @@ export class TaskAuthorizationService {
     return this.flowable.getTaskById<FlowableTask>(taskId);
   }
 
+  private isUserAdmin(user: AuthUser): boolean {
+    return Boolean(
+      user.roles?.some((r) =>
+        ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(
+          r.toLowerCase(),
+        ),
+      ) ||
+        ['admin', 'administrador'].includes(
+          (user.username || '').toLowerCase(),
+        ),
+    );
+  }
+
   private async isCandidate(
     task: FlowableTask,
     user: AuthUser,
@@ -48,10 +61,7 @@ export class TaskAuthorizationService {
     }
 
     // 2. Si el usuario es administrador, puede supervisar y reclamar cualquier tarea
-    const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
-    );
-    if (isAdmin) {
+    if (this.isUserAdmin(user)) {
       return true;
     }
 
@@ -120,9 +130,7 @@ export class TaskAuthorizationService {
       return task;
     }
 
-    const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
-    );
+    const isAdmin = this.isUserAdmin(user);
 
     if (task.assignee && !this.isTaskAssignedToUser(task, user) && !isAdmin) {
       throw new ConflictException(
@@ -138,7 +146,7 @@ export class TaskAuthorizationService {
       );
     }
 
-    await this.flowable.claimTask<unknown>(taskId, user.id);
+    await this.flowable.claimTask<unknown>(taskId, user.username || user.id);
 
     return this.getTask(taskId);
   }
@@ -147,9 +155,7 @@ export class TaskAuthorizationService {
     const task = await this.getTask(taskId);
 
     const isDev = this.config.get<string>('NODE_ENV') !== 'production';
-    const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
-    );
+    const isAdmin = this.isUserAdmin(user);
 
     if (!this.isTaskAssignedToUser(task, user) && !isAdmin && !isDev) {
       throw new ForbiddenException(
@@ -167,9 +173,7 @@ export class TaskAuthorizationService {
     const task = await this.getTask(taskId);
 
     const isDev = this.config.get<string>('NODE_ENV') !== 'production';
-    const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
-    );
+    const isAdmin = this.isUserAdmin(user);
 
     if (!this.isTaskAssignedToUser(task, user) && !isAdmin && !isDev) {
       throw new ForbiddenException(

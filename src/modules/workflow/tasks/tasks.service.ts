@@ -28,12 +28,44 @@ export class TasksService {
     private readonly config: ConfigService,
   ) {}
 
+  private emptyPage(): FlowablePage<WorkflowTask> {
+    return {
+      data: [],
+      total: 0,
+      start: 0,
+      size: 0,
+      sort: null,
+      order: null,
+    };
+  }
+
+  private isUserAdmin(user: AuthUser, effectiveGroups: string[] = []): boolean {
+    const adminRoles = ['workflow-admin', 'admin', 'realm-admin', 'superadmin'];
+    return Boolean(
+      user.roles?.some((r) => adminRoles.includes(r.toLowerCase())) ||
+        effectiveGroups.some((r) => adminRoles.includes(r.toLowerCase())) ||
+        ['admin', 'administrador'].includes(
+          (user.username || '').toLowerCase(),
+        ),
+    );
+  }
+
   async findMine(user: AuthUser, query: QueryTasksDto) {
     const start = query.start ?? 0;
     const size = query.size ?? 20;
 
     // Sincronizar y auto-asignar tareas huérfanas que tengan responsable configurado
     await this.taskAssignments.autoAssignConfiguredTasks().catch(() => undefined);
+
+    // Incluir tareas donde el usuario es responsable por reglas de asignación (usuarios/grupos/roles)
+    const effectiveGroups = await this.taskAssignments
+      .getUserEffectiveGroupsAndRoles(user)
+      .catch(() => user.roles ?? []);
+    const matchingRules = await this.taskAssignments
+      .findMatchingAssignmentsForUser(user, effectiveGroups)
+      .catch(() => []);
+
+    const isAdmin = this.isUserAdmin(user, effectiveGroups);
 
     const baseParams: Record<string, unknown> = {
       ...(query.processInstanceId && {
@@ -43,22 +75,65 @@ export class TasksService {
     };
 
     const queries: Array<Promise<FlowablePage<WorkflowTask>>> = [
-      this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
-        ...baseParams,
-        start: 0,
-        size: 100,
-        assignee: user.id,
-      }),
+      this.flowableService
+        .getTasks<FlowablePage<WorkflowTask>>({
+          ...baseParams,
+          start: 0,
+          size: 100,
+          assignee: user.id,
+        })
+        .catch(() => this.emptyPage()),
     ];
 
     if (user.username && user.username !== user.id) {
       queries.push(
-        this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
-          ...baseParams,
-          start: 0,
-          size: 100,
-          assignee: user.username,
-        }),
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...baseParams,
+            start: 0,
+            size: 100,
+            assignee: user.username,
+          })
+          .catch(() => this.emptyPage()),
+      );
+    }
+
+    for (const rule of matchingRules) {
+      queries.push(
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...baseParams,
+            start: 0,
+            size: 100,
+            processDefinitionKey: rule.processDefinitionKey,
+            taskDefinitionKey: rule.taskDefinitionKey,
+          })
+          .catch(() => this.emptyPage()),
+      );
+    }
+
+    if (effectiveGroups.length > 0) {
+      queries.push(
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...baseParams,
+            start: 0,
+            size: 100,
+            candidateGroups: effectiveGroups.join(','),
+          })
+          .catch(() => this.emptyPage()),
+      );
+    }
+
+    if (isAdmin) {
+      queries.push(
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...baseParams,
+            start: 0,
+            size: 100,
+          })
+          .catch(() => this.emptyPage()),
       );
     }
 
@@ -93,10 +168,11 @@ export class TasksService {
     // Asegurar que las tareas con responsable directo configurado se auto-asignen antes de listar las disponibles
     await this.taskAssignments.autoAssignConfiguredTasks().catch(() => undefined);
 
+    const effectiveGroups = await this.taskAssignments
+      .getUserEffectiveGroupsAndRoles(user)
+      .catch(() => user.roles ?? []);
     const isDev = this.config.get<string>('NODE_ENV') !== 'production';
-    const isAdmin = user.roles?.some((r) =>
-      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
-    );
+    const isAdmin = this.isUserAdmin(user, effectiveGroups);
 
     // En modo administrador, mostrar todas las tareas activas para supervisión global y acción directa
     // (incluyendo las asignadas a otros usuarios como Elvis Cabrera)
@@ -104,19 +180,6 @@ export class TasksService {
       return this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
         start,
         size,
-        ...(query.processInstanceId && {
-          processInstanceId: query.processInstanceId,
-        }),
-        ...(query.name && { name: query.name }),
-      });
-    }
-
-    // En desarrollo, mostrar todas las tareas sin asignar para pruebas
-    if (isDev && !query.candidateGroup) {
-      return this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
-        start,
-        size,
-        unassigned: true,
         ...(query.processInstanceId && {
           processInstanceId: query.processInstanceId,
         }),
@@ -137,16 +200,11 @@ export class TasksService {
       });
     }
 
-    const effectiveGroups =
-      await this.taskAssignments.getUserEffectiveGroupsAndRoles(user);
-    const matchingRules =
-      await this.taskAssignments.findMatchingAssignmentsForUser(
-        user,
-        effectiveGroups,
-      );
+    const matchingRules = await this.taskAssignments
+      .findMatchingAssignmentsForUser(user, effectiveGroups)
+      .catch(() => []);
 
     const commonFilters: Record<string, unknown> = {
-      unassigned: true,
       ...(query.processInstanceId && {
         processInstanceId: query.processInstanceId,
       }),
@@ -155,35 +213,54 @@ export class TasksService {
 
     const pagePromises: Array<Promise<FlowablePage<WorkflowTask>>> = [];
 
+    if (isDev) {
+      pagePromises.push(
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...commonFilters,
+            unassigned: true,
+            start: 0,
+            size: 100,
+          })
+          .catch(() => this.emptyPage()),
+      );
+    }
+
     if (effectiveGroups.length > 0) {
       pagePromises.push(
-        this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
-          ...commonFilters,
-          start: 0,
-          size: 100,
-          candidateGroupIn: effectiveGroups.join(','),
-        }),
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...commonFilters,
+            start: 0,
+            size: 100,
+            candidateGroups: effectiveGroups.join(','),
+          })
+          .catch(() => this.emptyPage()),
       );
     } else {
       pagePromises.push(
-        this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
-          ...commonFilters,
-          start: 0,
-          size: 100,
-          candidateUser: user.id,
-        }),
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...commonFilters,
+            start: 0,
+            size: 100,
+            candidateUser: user.username || user.id,
+          })
+          .catch(() => this.emptyPage()),
       );
     }
 
     for (const rule of matchingRules) {
       pagePromises.push(
-        this.flowableService.getTasks<FlowablePage<WorkflowTask>>({
-          ...commonFilters,
-          start: 0,
-          size: 100,
-          processDefinitionKey: rule.processDefinitionKey,
-          taskDefinitionKey: rule.taskDefinitionKey,
-        }),
+        this.flowableService
+          .getTasks<FlowablePage<WorkflowTask>>({
+            ...commonFilters,
+            start: 0,
+            size: 100,
+            processDefinitionKey: rule.processDefinitionKey,
+            taskDefinitionKey: rule.taskDefinitionKey,
+          })
+          .catch(() => this.emptyPage()),
       );
     }
 
@@ -192,9 +269,7 @@ export class TasksService {
 
     for (const res of results) {
       for (const task of res.data ?? []) {
-        if (!task.assignee) {
-          uniqueTasks.set(task.id, task);
-        }
+        uniqueTasks.set(task.id, task);
       }
     }
 
@@ -253,17 +328,132 @@ export class TasksService {
   }
 
   async complete(id: string, dto: CompleteTaskDto, user?: AuthUser) {
-    const variables = { ...(dto.variables ?? {}) };
+    const variables: Record<string, unknown> = { ...(dto.variables ?? {}) };
+
+    // Obtener datos de la tarea antes de validar y completarla
+    const task = await this.findOne(id).catch(() => null);
+    const taskDefKey = task?.taskDefinitionKey ?? '';
+
+    const isExplicitRejectOrObserve =
+      variables.decision === 'REJECT' ||
+      variables.decision === 'OBSERVE' ||
+      variables.aprobado === false ||
+      variables.estadoDecision === 'RECHAZADO' ||
+      variables.estadoDecision === 'OBSERVADO';
+
+    const isExplicitApprove =
+      variables.decision === 'APPROVE' ||
+      variables.aprobado === true ||
+      variables.estadoDecision === 'APROBADO';
+
+    const inferredApprove: boolean | undefined = isExplicitRejectOrObserve
+      ? false
+      : isExplicitApprove
+        ? true
+        : undefined;
+
+    const commentFallback =
+      typeof variables.comentarios === 'string' && variables.comentarios.trim()
+        ? variables.comentarios.trim()
+        : undefined;
+
+    if (taskDefKey === 'taskVerificarExistencias') {
+      if (variables.aprobadoAlmacenes === undefined && inferredApprove !== undefined) {
+        variables.aprobadoAlmacenes = inferredApprove;
+      }
+      if (!variables.obsAlmacenes && commentFallback) {
+        variables.obsAlmacenes = commentFallback;
+      }
+      if (variables.hayExistencias === undefined) {
+        variables.hayExistencias = false;
+      }
+    } else if (taskDefKey === 'taskVerificarPresupuesto') {
+      if (variables.aprobadoPresupuesto === undefined && inferredApprove !== undefined) {
+        variables.aprobadoPresupuesto = inferredApprove;
+      }
+      if (!variables.obsPresupuesto && commentFallback) {
+        variables.obsPresupuesto = commentFallback;
+      }
+    } else if (taskDefKey === 'taskAprobacionSuperior') {
+      if (variables.aprobadoSuperior === undefined && inferredApprove !== undefined) {
+        variables.aprobadoSuperior = inferredApprove;
+      }
+      if (!variables.obsSuperior && commentFallback) {
+        variables.obsSuperior = commentFallback;
+      }
+    } else if (taskDefKey === 'taskGafCat1' || taskDefKey === 'taskGafCat2') {
+      if (variables.aprobadoGaf === undefined && inferredApprove !== undefined) {
+        variables.aprobadoGaf = inferredApprove;
+      }
+      if (!variables.obsGaf && commentFallback) {
+        variables.obsGaf = commentFallback;
+      }
+    } else if (taskDefKey === 'taskVoboFinanciero') {
+      const valFin =
+        typeof variables.aprobadoFinanciero === 'boolean'
+          ? variables.aprobadoFinanciero
+          : typeof variables.voboFinanciero === 'boolean'
+            ? variables.voboFinanciero
+            : inferredApprove;
+      if (valFin !== undefined) {
+        variables.voboFinanciero = valFin;
+        variables.aprobadoFinanciero = valFin;
+      }
+      if (!variables.obsFinanciero && commentFallback) {
+        variables.obsFinanciero = commentFallback;
+      }
+    } else if (taskDefKey === 'taskVoboLegal') {
+      const valLegal =
+        typeof variables.aprobadoLegal === 'boolean'
+          ? variables.aprobadoLegal
+          : typeof variables.voboLegal === 'boolean'
+            ? variables.voboLegal
+            : inferredApprove;
+      if (valLegal !== undefined) {
+        variables.voboLegal = valLegal;
+        variables.aprobadoLegal = valLegal;
+      }
+      if (!variables.obsLegal && commentFallback) {
+        variables.obsLegal = commentFallback;
+      }
+    } else if (
+      taskDefKey === 'taskDecisionFinalCat1' ||
+      taskDefKey === 'taskDecisionFinalCat2'
+    ) {
+      if (!variables.decisionFinal) {
+        if (variables.decision === 'REJECT' || variables.estadoDecision === 'RECHAZADO') {
+          variables.decisionFinal = 'RECHAZADO';
+        } else if (
+          variables.decision === 'OBSERVE' ||
+          variables.estadoDecision === 'OBSERVADO'
+        ) {
+          variables.decisionFinal = 'OBSERVADO';
+        } else if (inferredApprove === true) {
+          variables.decisionFinal = 'APROBADO';
+        }
+      }
+      if (!variables.justificacion && commentFallback) {
+        variables.justificacion = commentFallback;
+      }
+    }
 
     await this.taskFormService.validateIfFormExists(id, variables);
 
-    // Obtener datos de la tarea antes de completarla
-    const task = await this.findOne(id).catch(() => null);
-
     const result = await this.flowableService.completeTask<void>(id, variables);
 
-    // Disparar notificaciones correspondientes según la normativa PR-GAF-08
+    // Sincronizar y auto-asignar inmediatamente las siguientes tareas creadas tras completar esta etapa
     if (task && task.processInstanceId) {
+      const procKey =
+        task.processDefinitionId?.split(':')[0] || 'prGaf08Adquisiciones';
+      await this.taskAssignments
+        .syncProcessInstanceTasks(task.processInstanceId, procKey)
+        .catch((err) =>
+          this.logger.warn(
+            `Error al sincronizar asignaciones de siguientes tareas: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+
+      // Disparar notificaciones correspondientes según la normativa PR-GAF-08
       this.handleTaskCompletedNotifications(task, variables, user).catch((err) =>
         this.logger.warn(
           `Error en notificación al completar tarea [${task.name}]: ${err instanceof Error ? err.message : String(err)}`,

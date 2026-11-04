@@ -25,34 +25,192 @@ export class InstancesService {
 
   async findAll(query: QueryInstancesDto, user?: AuthUser) {
     const isAdmin = user?.roles?.some((r: string) =>
-      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(r),
+      ['workflow-admin', 'admin', 'realm-admin', 'superadmin'].includes(
+        r.toLowerCase(),
+      ),
     );
 
     // Si NO es admin, filtrar estrictamente por su usuario
-    let effectiveStartedBy = query.startedBy;
+    let effectiveStartedBy = query.startedBy?.trim();
     if (!isAdmin && user) {
       effectiveStartedBy = user.username || user.id;
     }
 
+    const start = query.start ?? 0;
+    const size = query.size ?? 10;
+    const needsUserFilter = Boolean(effectiveStartedBy);
+
+    // Flowable registra START_USER_ID_ con la cuenta técnica del servicio (ej. admin),
+    // mientras que el solicitante real se almacena en variables del proceso.
+    // Por ello solicitamos includeProcessVariables=true y resolvemos el solicitante real.
     const flowableParams: Record<string, unknown> = {
-      start: query.start,
-      size: query.size,
+      start: needsUserFilter ? 0 : start,
+      size: needsUserFilter ? 500 : size,
+      includeProcessVariables: true,
       ...(query.processDefinitionKey && {
         processDefinitionKey: query.processDefinitionKey,
       }),
       ...(query.businessKey && {
         businessKey: query.businessKey,
       }),
-      ...(effectiveStartedBy && {
-        startedBy: effectiveStartedBy,
-      }),
     };
 
-    return this.flowable.getInstancesFiltered<FlowablePage<ProcessInstance>>(flowableParams);
+    const page =
+      await this.flowable.getInstancesFiltered<FlowablePage<ProcessInstance>>(
+        flowableParams,
+      );
+
+    const rawInstances = Array.isArray(page?.data) ? page.data : [];
+
+    const enriched = await Promise.all(
+      rawInstances.map(async (inst) => {
+        const vars = await this.resolveInstanceVariablesMap(inst);
+        const registradoPor = this.pickFirstString([
+          vars.registradoPor,
+          vars.iniciador,
+          vars.solicitante,
+          inst.registradoPor,
+        ]);
+        const startUserId = this.pickFirstString([
+          vars.startUserId,
+          vars.iniciadorUsername,
+          vars.iniciadorId,
+          vars.startedBy,
+          inst.startUserId,
+        ]);
+
+        const candidateTokens = [
+          vars.startUserId,
+          vars.iniciadorUsername,
+          vars.iniciadorId,
+          vars.startedBy,
+          vars.registradoPor,
+          vars.iniciador,
+          vars.solicitante,
+          inst.registradoPor,
+          inst.startUserId,
+        ]
+          .filter((v) => v !== undefined && v !== null && String(v).trim() !== '')
+          .map((v) => String(v).trim().toLowerCase());
+
+        return {
+          instance: {
+            ...inst,
+            registradoPor: registradoPor ?? inst.registradoPor ?? null,
+            startUserId: startUserId ?? inst.startUserId ?? null,
+          } satisfies ProcessInstance,
+          candidateTokens,
+        };
+      }),
+    );
+
+    if (!needsUserFilter) {
+      return {
+        ...page,
+        data: enriched.map((item) => item.instance),
+      };
+    }
+
+    const isFilteringOwnUser =
+      !isAdmin ||
+      Boolean(
+        user &&
+          effectiveStartedBy &&
+          [user.username, user.id, user.name, user.email]
+            .filter(Boolean)
+            .some(
+              (u) =>
+                String(u).trim().toLowerCase() ===
+                effectiveStartedBy!.toLowerCase(),
+            ),
+      );
+
+    const userTokens = isFilteringOwnUser
+      ? [
+          user?.username,
+          user?.id,
+          user?.name,
+          user?.email,
+          effectiveStartedBy,
+        ]
+          .filter((v) => v !== undefined && v !== null && String(v).trim() !== '')
+          .map((v) => String(v).trim().toLowerCase())
+      : [];
+
+    const needle = effectiveStartedBy?.toLowerCase() ?? '';
+
+    const filtered = enriched
+      .filter(({ candidateTokens }) => {
+        if (isFilteringOwnUser) {
+          return candidateTokens.some((token) => userTokens.includes(token));
+        }
+        return candidateTokens.some((token) => token.includes(needle));
+      })
+      .map((item) => item.instance);
+
+    return {
+      data: filtered.slice(start, start + size),
+      total: filtered.length,
+      start,
+      size,
+      sort: page?.sort ?? null,
+      order: page?.order ?? null,
+    };
   }
 
-  findOne(id: string) {
-    return this.flowable.getInstanceById<ProcessInstance>(id);
+  async findOne(id: string) {
+    const instance = await this.flowable.getInstanceById<ProcessInstance>(id);
+    if (!instance) return instance;
+
+    const vars = await this.resolveInstanceVariablesMap(instance);
+    const registradoPor = this.pickFirstString([
+      vars.registradoPor,
+      vars.iniciador,
+      vars.solicitante,
+      instance.registradoPor,
+    ]);
+    const startUserId = this.pickFirstString([
+      vars.startUserId,
+      vars.iniciadorUsername,
+      vars.iniciadorId,
+      vars.startedBy,
+      instance.startUserId,
+    ]);
+
+    return {
+      ...instance,
+      registradoPor: registradoPor ?? instance.registradoPor ?? null,
+      startUserId: startUserId ?? instance.startUserId ?? null,
+    };
+  }
+
+  private pickFirstString(values: unknown[]): string | null {
+    for (const val of values) {
+      if (typeof val === 'string' && val.trim().length > 0) {
+        return val.trim();
+      }
+    }
+    return null;
+  }
+
+  private async resolveInstanceVariablesMap(
+    instance: ProcessInstance,
+  ): Promise<Record<string, unknown>> {
+    if (Array.isArray(instance.variables) && instance.variables.length > 0) {
+      const result: Record<string, unknown> = {};
+      for (const v of instance.variables) {
+        const name = v.variable?.name || v.name;
+        const value =
+          v.variable?.value !== undefined ? v.variable.value : v.value;
+        if (name) {
+          result[name] = value;
+        }
+      }
+      if (Object.keys(result).length > 0) {
+        return result;
+      }
+    }
+    return this.getVariables(instance.id);
   }
 
   async start(dto: StartProcessDto, user?: AuthUser) {
@@ -70,6 +228,7 @@ export class InstancesService {
     const startUserId = user?.username || user?.id;
 
     if (startUserId) {
+      variables.initiator = startUserId;
       variables.startUserId = startUserId;
       variables.iniciador = startUserName;
       variables.iniciadorUsername = user?.username;

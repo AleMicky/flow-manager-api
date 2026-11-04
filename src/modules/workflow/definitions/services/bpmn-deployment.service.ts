@@ -99,8 +99,12 @@ export class BpmnDeploymentService implements OnModuleInit {
             if (versions?.data?.length) {
                 const latest = versions.data[0];
                 const currentXml = await this.getXml(latest.id);
-                // Si la versión activa en Flowable ya incluye taskAjustarSolicitud, ya está sincronizada
-                if (currentXml && currentXml.includes('taskAjustarSolicitud')) {
+                // Si la versión activa en Flowable ya incluye mergeVerificaciones y taskInformesCierre, ya está sincronizada
+                if (
+                    currentXml &&
+                    currentXml.includes('mergeVerificaciones') &&
+                    currentXml.includes('taskInformesCierre')
+                ) {
                     needsDeploy = false;
                 }
             }

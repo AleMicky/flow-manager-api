@@ -11,6 +11,11 @@ export interface ProcessInstance {
   startUserId?: string | null;
   startTime?: string | null;
   registradoPor?: string | null;
+  variables?: Array<{
+    name?: string;
+    value?: unknown;
+    variable?: { name: string; value: unknown };
+  }>;
 }
 
 export interface FlowablePage<T> {

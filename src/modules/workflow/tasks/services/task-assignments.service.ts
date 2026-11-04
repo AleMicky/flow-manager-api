@@ -26,6 +26,7 @@ export interface BpmnUserTaskAssignmentView {
   candidateGroups: string[];
   candidateUsers: string[];
   active: boolean;
+  defaultAssignee?: string | null;
 }
 
 interface FlowableDefinitionSummary {
@@ -105,7 +106,13 @@ export class TaskAssignmentsService implements OnModuleInit {
       savedAssignments.map((item) => [item.taskDefinitionKey, item]),
     );
 
-    const parsedTasks: Array<{ id: string; name: string }> = [];
+    const parsedTasks: Array<{
+      id: string;
+      name: string;
+      assignee?: string | null;
+      candidateGroups?: string[];
+      candidateUsers?: string[];
+    }> = [];
 
     try {
       const defsPage = await this.flowable.getDefinitions<
@@ -155,8 +162,34 @@ export class TaskAssignmentsService implements OnModuleInit {
             const id = typeof ut['@_id'] === 'string' ? ut['@_id'] : '';
             const name =
               typeof ut['@_name'] === 'string' ? ut['@_name'] : id;
+            const assignee =
+              typeof ut['@_flowable:assignee'] === 'string'
+                ? ut['@_flowable:assignee']
+                : typeof ut['@_assignee'] === 'string'
+                  ? ut['@_assignee']
+                  : null;
+            const rawGroups =
+              typeof ut['@_flowable:candidateGroups'] === 'string'
+                ? ut['@_flowable:candidateGroups']
+                : typeof ut['@_candidateGroups'] === 'string'
+                  ? ut['@_candidateGroups']
+                  : '';
+            const rawUsers =
+              typeof ut['@_flowable:candidateUsers'] === 'string'
+                ? ut['@_flowable:candidateUsers']
+                : typeof ut['@_candidateUsers'] === 'string'
+                  ? ut['@_candidateUsers']
+                  : '';
+
+            const candidateGroups = rawGroups
+              ? rawGroups.split(',').map((s) => s.trim()).filter(Boolean)
+              : [];
+            const candidateUsers = rawUsers
+              ? rawUsers.split(',').map((s) => s.trim()).filter(Boolean)
+              : [];
+
             if (id) {
-              parsedTasks.push({ id, name });
+              parsedTasks.push({ id, name, assignee, candidateGroups, candidateUsers });
             }
           }
         }
@@ -173,14 +206,31 @@ export class TaskAssignmentsService implements OnModuleInit {
     for (const task of parsedTasks) {
       seenKeys.add(task.id);
       const saved = savedMap.get(task.id);
+
+      const effectiveGroups =
+        saved && saved.candidateGroups.length > 0
+          ? saved.candidateGroups
+          : (task.candidateGroups ?? []);
+
+      let effectiveUsers =
+        saved && saved.candidateUsers.length > 0
+          ? saved.candidateUsers
+          : (task.candidateUsers ?? []);
+
+      // Si no tiene usuarios pero en el BPMN tiene asignado ${initiator} o una variable, incorporarlo
+      if (effectiveUsers.length === 0 && task.assignee) {
+        effectiveUsers = [task.assignee];
+      }
+
       result.push({
         processDefinitionKey,
         taskDefinitionKey: task.id,
         taskName: saved?.taskName || task.name,
         assignmentId: saved?.id ?? null,
-        candidateGroups: saved?.candidateGroups ?? [],
-        candidateUsers: saved?.candidateUsers ?? [],
+        candidateGroups: effectiveGroups,
+        candidateUsers: effectiveUsers,
         active: saved?.active ?? true,
+        defaultAssignee: task.assignee ?? null,
       });
     }
 
@@ -262,13 +312,21 @@ export class TaskAssignmentsService implements OnModuleInit {
     const identifiers = new Set<string>(user.roles ?? []);
 
     try {
-      const groups = await this.keycloakUsers.getUserGroups(user.id);
+      const [groups, rolesInfo] = await Promise.all([
+        this.keycloakUsers.getUserGroups(user.id).catch(() => []),
+        this.keycloakUsers.getUserRoles(user.id).catch(() => null),
+      ]);
       for (const group of groups) {
         if (group.name) identifiers.add(group.name);
         if (group.id) identifiers.add(group.id);
         if (group.path) {
           identifiers.add(group.path);
           identifiers.add(group.path.replace(/^\//, ''));
+        }
+      }
+      if (rolesInfo?.effectiveRoles) {
+        for (const roleName of rolesInfo.effectiveRoles) {
+          if (roleName) identifiers.add(roleName);
         }
       }
     } catch {
@@ -288,22 +346,114 @@ export class TaskAssignmentsService implements OnModuleInit {
   ): Promise<WorkflowTaskAssignment[]> {
     const groups =
       effectiveGroups ?? (await this.getUserEffectiveGroupsAndRoles(user));
+    const lowerGroups = new Set(groups.map((g) => g.toLowerCase()));
+    const userTokens = new Set(
+      [user.id, user.username, user.email, user.name]
+        .filter((v): v is string => Boolean(v))
+        .map((v) => v.toLowerCase()),
+    );
 
     const allActive = await this.repository.find({
       where: { active: true },
     });
 
     return allActive.filter((assignment) => {
-      if (assignment.candidateUsers.includes(user.id)) {
-        return true;
-      }
       if (
-        assignment.candidateUsers.includes(user.username)
+        assignment.candidateUsers.some((u) =>
+          userTokens.has(u.toLowerCase()),
+        )
       ) {
         return true;
       }
-      return assignment.candidateGroups.some((g) => groups.includes(g));
+      return assignment.candidateGroups.some((g) =>
+        lowerGroups.has(g.toLowerCase()),
+      );
     });
+  }
+
+  private async getProcessVariablesMap(
+    processInstanceId?: string | null,
+  ): Promise<Record<string, unknown>> {
+    if (!processInstanceId) return {};
+    try {
+      const vars = await this.flowable.getInstanceVariables<
+        Array<{
+          name?: string;
+          value?: unknown;
+          variable?: { name: string; value: unknown };
+        }>
+      >(processInstanceId);
+      const result: Record<string, unknown> = {};
+      if (Array.isArray(vars)) {
+        for (const v of vars) {
+          const name = v.variable?.name || v.name;
+          const value =
+            v.variable?.value !== undefined ? v.variable.value : v.value;
+          if (name) {
+            result[name] = value;
+          }
+        }
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  private async resolveDesignatedUser(
+    rawUser: string | undefined,
+    processInstanceId?: string | null,
+  ): Promise<string | null> {
+    if (!rawUser) return null;
+    const trimmed = rawUser.trim();
+    if (!trimmed) return null;
+
+    if (trimmed === '${initiator}' || trimmed === 'solicitante') {
+      const vars = await this.getProcessVariablesMap(processInstanceId);
+      const resolved =
+        vars.iniciadorUsername ||
+        vars.startUserId ||
+        vars.initiator ||
+        vars.iniciadorId;
+      if (typeof resolved === 'string' && resolved.trim().length > 0) {
+        return resolved.trim();
+      }
+      return null;
+    }
+
+    const exprMatch = /^\$\{(.+)\}$/.exec(trimmed);
+    if (exprMatch) {
+      const varName = exprMatch[1].trim();
+      const vars = await this.getProcessVariablesMap(processInstanceId);
+      const val = vars[varName];
+      if (typeof val === 'string' && val.trim().length > 0) {
+        return val.trim();
+      }
+      return null;
+    }
+
+    return trimmed;
+  }
+
+  private isCorruptedAssignee(assignee?: string | null): boolean {
+    if (!assignee) return false;
+    const trimmed = assignee.trim();
+    return trimmed.startsWith('${') || trimmed === 'solicitante';
+  }
+
+  private async assignTaskSafely(
+    task: WorkflowTask,
+    designatedUser: string,
+  ): Promise<void> {
+    if (!designatedUser || designatedUser.startsWith('${')) return;
+    if (task.assignee === designatedUser) return;
+
+    if (task.assignee) {
+      await this.flowable.unclaimTask(task.id).catch(() => undefined);
+    }
+    await this.flowable
+      .claimTask(task.id, designatedUser)
+      .catch(() => undefined);
   }
 
   /**
@@ -328,6 +478,24 @@ export class TaskAssignmentsService implements OnModuleInit {
 
       for (const task of activeTasks) {
         if (!task.taskDefinitionKey) continue;
+
+        // Si la tarea quedó con un assignee literal como "${initiator}" o "admin" por el motor, repararla
+        if (this.isCorruptedAssignee(task.assignee)) {
+          const fallbackInitiator = await this.resolveDesignatedUser(
+            '${initiator}',
+            processInstanceId,
+          );
+          await this.flowable.unclaimTask(task.id).catch(() => undefined);
+          task.assignee = null;
+          if (
+            task.taskDefinitionKey === 'taskAjustarSolicitud' &&
+            fallbackInitiator
+          ) {
+            await this.assignTaskSafely(task, fallbackInitiator);
+            task.assignee = fallbackInitiator;
+          }
+        }
+
         const rule = rulesMap.get(task.taskDefinitionKey);
         if (!rule || !rule.active) continue;
 
@@ -336,22 +504,37 @@ export class TaskAssignmentsService implements OnModuleInit {
             .addTaskCandidateGroup(task.id, group)
             .catch(() => undefined);
         }
-        for (const userId of rule.candidateUsers) {
-          await this.flowable
-            .addTaskCandidateUser(task.id, userId)
-            .catch(() => undefined);
+
+        for (const rawUserId of rule.candidateUsers) {
+          const resolvedCandidate = await this.resolveDesignatedUser(
+            rawUserId,
+            processInstanceId,
+          );
+          if (resolvedCandidate) {
+            await this.flowable
+              .addTaskCandidateUser(task.id, resolvedCandidate)
+              .catch(() => undefined);
+          }
         }
 
         // Si la regla tiene un responsable directo configurado y la tarea no tiene asignado,
-        // asignar de inmediato al responsable para que aparezca en "Mis Tareas"
-        if (!task.assignee && rule.candidateUsers && rule.candidateUsers.length > 0) {
-          const designatedUser = rule.candidateUsers[0];
-          await this.flowable
-            .claimTask(task.id, designatedUser)
-            .catch(() => undefined);
-          this.logger.log(
-            `Tarea nueva [${task.id} - ${task.taskDefinitionKey}] asignada directamente al responsable [${designatedUser}]`,
+        // asignar de inmediato al responsable para que aparezca en "Mis Tareas" / "Mis Aprobaciones"
+        if (
+          (!task.assignee || this.isCorruptedAssignee(task.assignee)) &&
+          rule.candidateUsers &&
+          rule.candidateUsers.length > 0
+        ) {
+          const designatedUser = await this.resolveDesignatedUser(
+            rule.candidateUsers[0],
+            processInstanceId,
           );
+
+          if (designatedUser) {
+            await this.assignTaskSafely(task, designatedUser);
+            this.logger.log(
+              `Tarea nueva [${task.id} - ${task.taskDefinitionKey}] asignada directamente al responsable [${designatedUser}]`,
+            );
+          }
         }
       }
     } catch (error) {
@@ -373,26 +556,36 @@ export class TaskAssignmentsService implements OnModuleInit {
       );
 
       for (const rule of rulesWithUsers) {
-        const designatedUser = rule.candidateUsers[0];
-        if (!designatedUser) continue;
+        const rawDesignated = rule.candidateUsers[0];
+        if (!rawDesignated) continue;
 
-        const unassignedPage = await this.flowable
+        const tasksPage = await this.flowable
           .getTasks<FlowablePage<WorkflowTask>>({
             processDefinitionKey: rule.processDefinitionKey,
             taskDefinitionKey: rule.taskDefinitionKey,
-            unassigned: true,
             size: 50,
           })
           .catch(() => null);
 
-        const unassignedTasks = unassignedPage?.data ?? [];
-        for (const task of unassignedTasks) {
-          await this.flowable
-            .claimTask(task.id, designatedUser)
-            .catch(() => undefined);
-          this.logger.log(
-            `Tarea activa [${task.id} - ${task.name}] auto-asignada al responsable [${designatedUser}] según regla BPMN`,
+        const activeTasks = tasksPage?.data ?? [];
+        for (const task of activeTasks) {
+          if (task.assignee && !this.isCorruptedAssignee(task.assignee)) {
+            continue;
+          }
+
+          const designatedUser = await this.resolveDesignatedUser(
+            rawDesignated,
+            task.processInstanceId,
           );
+
+          if (designatedUser) {
+            await this.assignTaskSafely(task, designatedUser);
+            this.logger.log(
+              `Tarea activa [${task.id} - ${task.name}] auto-asignada al responsable [${designatedUser}] según regla BPMN`,
+            );
+          } else if (this.isCorruptedAssignee(task.assignee)) {
+            await this.flowable.unclaimTask(task.id).catch(() => undefined);
+          }
         }
       }
     } catch (error) {
@@ -422,19 +615,26 @@ export class TaskAssignmentsService implements OnModuleInit {
             .addTaskCandidateGroup(task.id, group)
             .catch(() => undefined);
         }
-        for (const userId of assignment.candidateUsers) {
-          await this.flowable
-            .addTaskCandidateUser(task.id, userId)
-            .catch(() => undefined);
+        for (const rawUserId of assignment.candidateUsers) {
+          const resolvedCandidate = await this.resolveDesignatedUser(
+            rawUserId,
+            task.processInstanceId,
+          );
+          if (resolvedCandidate) {
+            await this.flowable
+              .addTaskCandidateUser(task.id, resolvedCandidate)
+              .catch(() => undefined);
+          }
         }
 
         // Si la regla tiene un usuario responsable directo, asignarlo directamente a la tarea
         if (assignment.candidateUsers && assignment.candidateUsers.length > 0) {
-          const designatedUser = assignment.candidateUsers[0];
-          if (!task.assignee || task.assignee !== designatedUser) {
-            await this.flowable
-              .claimTask(task.id, designatedUser)
-              .catch(() => undefined);
+          const designatedUser = await this.resolveDesignatedUser(
+            assignment.candidateUsers[0],
+            task.processInstanceId,
+          );
+          if (designatedUser && task.assignee !== designatedUser) {
+            await this.assignTaskSafely(task, designatedUser);
             this.logger.log(
               `Tarea activa [${task.id} - ${task.taskDefinitionKey}] reasignada al responsable [${designatedUser}]`,
             );
