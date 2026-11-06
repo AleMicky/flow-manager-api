@@ -31,6 +31,22 @@ export class FormsService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     try {
+      await this.repository.query(`
+        CREATE TABLE IF NOT EXISTS workflow_forms (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          "processDefinitionKey" VARCHAR(150),
+          "processDefinitionId" VARCHAR(150),
+          "taskDefinitionKey" VARCHAR(150) NOT NULL,
+          title VARCHAR(150) NOT NULL,
+          description TEXT,
+          schema JSONB NOT NULL,
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          CONSTRAINT uq_workflow_forms_key_task
+            UNIQUE ("processDefinitionKey", "taskDefinitionKey")
+        );
+      `);
       await this.seedPreconfiguredForms();
     } catch (error) {
       this.logger.warn(
@@ -311,15 +327,15 @@ export class FormsService implements OnModuleInit {
         active: true,
         schema: {
           type: 'object',
-          required: ['voboFinanciero', 'obsFinanciero'],
+          required: ['aprobadoFinanciero', 'obsFinanciero'],
           properties: {
-            voboFinanciero: {
+            aprobadoFinanciero: {
               type: 'boolean',
-              title: 'VoBo Administrativo Financiero Otorgado',
+              title: '¿Otorga el VoBo Administrativo Financiero para la contratación?',
             },
             obsFinanciero: {
               type: 'string',
-              title: 'Informe / Detalle Financiero',
+              title: 'Informe / Detalle y Dictamen Financiero',
               format: 'textarea',
             },
             informeFinanciero: {
@@ -339,15 +355,15 @@ export class FormsService implements OnModuleInit {
         active: true,
         schema: {
           type: 'object',
-          required: ['voboLegal', 'obsLegal'],
+          required: ['aprobadoLegal', 'obsLegal'],
           properties: {
-            voboLegal: {
+            aprobadoLegal: {
               type: 'boolean',
-              title: 'VoBo Legal Otorgado',
+              title: '¿Otorga el VoBo Legal conforme para la contratación?',
             },
             obsLegal: {
               type: 'string',
-              title: 'Informe / Dictamen Legal',
+              title: 'Dictamen / Informe Legal de Procedencia',
               format: 'textarea',
             },
             informeLegal: {
@@ -428,6 +444,40 @@ export class FormsService implements OnModuleInit {
               type: 'string',
               title: 'Resolución de Gerencia General Firmada (PDF)',
               format: 'binary',
+            },
+          },
+        },
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskInformesCierre',
+        title: 'Adjuntar Informes Técnico y Legal de Cancelación y Archivo',
+        description:
+          'Subir informes motivados requeridos por normativa antes del cierre y archivo definitivo.',
+        active: true,
+        schema: {
+          type: 'object',
+          required: [
+            'adjuntoInformeTecnico',
+            'adjuntoInformeLegal',
+            'conclusionesCierre',
+          ],
+          properties: {
+            adjuntoInformeTecnico: {
+              type: 'string',
+              title:
+                'Informe Técnico de Justificación de Rechazo / Cancelación (PDF)',
+              format: 'binary',
+            },
+            adjuntoInformeLegal: {
+              type: 'string',
+              title: 'Informe Legal de Soporte para Archivo (PDF)',
+              format: 'binary',
+            },
+            conclusionesCierre: {
+              type: 'string',
+              title: 'Conclusiones y Constancia de Archivo Definitivo',
+              format: 'textarea',
             },
           },
         },

@@ -1,12 +1,84 @@
--- 1. Destrabar cualquier transacción previa que haya fallado
-ROLLBACK;
+-- =============================================================================
+-- MIGRACIÓN CENTRALIZADA: FLOW MANAGER API (PR-GAF-08 ENDE ANDINA S.A.M.)
+-- Crea todas las tablas necesarias, índices, restricciones y datos semilla.
+-- =============================================================================
 
 BEGIN;
 
--- 2. Asegurar extensión UUID
+-- 1. Extensión para generación de UUIDs
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 3. Crear workflow_forms con su restricción UNIQUE estándar
+-- 2. Eliminar objetos obsoletos si existieran de versiones previas
+DROP TABLE IF EXISTS solicitudes_compra CASCADE;
+DROP TYPE IF EXISTS estado_solicitud_compra CASCADE;
+
+-- =============================================================================
+-- 3. TABLA: workflow_processes (Catálogo de procesos de negocio)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS workflow_processes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key VARCHAR(150) NOT NULL UNIQUE,
+  name VARCHAR(200) NOT NULL,
+  description TEXT,
+  "processDefinitionKey" VARCHAR(150) NOT NULL,
+  "codePrefix" VARCHAR(50) NOT NULL DEFAULT 'ADQ',
+  "correlativeFormat" VARCHAR(100) NOT NULL DEFAULT '{prefix}-{number:3}/{year}',
+  "startFormSchema" JSONB NOT NULL DEFAULT '{"type":"object","properties":{},"additionalProperties":false}'::jsonb,
+  active BOOLEAN NOT NULL DEFAULT FALSE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- 4. TABLA: workflow_correlatives (Secuencias correlativas por proceso y año)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS workflow_correlatives (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "processDefinitionKey" VARCHAR(150) NOT NULL,
+  year INT NOT NULL,
+  "currentValue" INT NOT NULL DEFAULT 0,
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_workflow_correlatives_key_year UNIQUE ("processDefinitionKey", year)
+);
+
+-- =============================================================================
+-- 5. TABLA: workflow_submissions (Expedientes / trámites iniciados)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS workflow_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "processId" UUID NOT NULL REFERENCES workflow_processes(id),
+  title VARCHAR(250) NOT NULL,
+  "processInstanceId" VARCHAR(150) UNIQUE,
+  "processDefinitionId" VARCHAR(200),
+  "startedBy" VARCHAR(150) NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status VARCHAR(50) NOT NULL DEFAULT 'PENDING_START',
+  "errorMessage" TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_submission_status CHECK (
+    status IN (
+      'PENDING_START',
+      'START_FAILED',
+      'IN_PROGRESS',
+      'COMPLETED',
+      'CANCELLED'
+    )
+  )
+);
+
+CREATE INDEX IF NOT EXISTS ix_workflow_submissions_process
+  ON workflow_submissions("processId");
+
+CREATE INDEX IF NOT EXISTS ix_workflow_submissions_started_by
+  ON workflow_submissions("startedBy");
+
+CREATE INDEX IF NOT EXISTS ix_workflow_submissions_status
+  ON workflow_submissions(status);
+
+-- =============================================================================
+-- 6. TABLA: workflow_forms (Formularios dinámicos JSON Schema por tarea BPMN)
+-- =============================================================================
 CREATE TABLE IF NOT EXISTS workflow_forms (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "processDefinitionKey" VARCHAR(150),
@@ -17,33 +89,14 @@ CREATE TABLE IF NOT EXISTS workflow_forms (
   schema JSONB NOT NULL,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_workflow_forms_key_task
+    UNIQUE ("processDefinitionKey", "taskDefinitionKey")
 );
 
--- Asegurar columnas si la tabla ya existía
-ALTER TABLE workflow_forms 
-  ADD COLUMN IF NOT EXISTS "processDefinitionKey" VARCHAR(150),
-  ALTER COLUMN "processDefinitionId" DROP NOT NULL;
-
--- Limpiar índice parcial previo y fijar restricción UNIQUE formal
-DROP INDEX IF EXISTS uq_workflow_form_process_key_task;
-ALTER TABLE workflow_forms DROP CONSTRAINT IF EXISTS uq_workflow_forms_key_task;
-ALTER TABLE workflow_forms ADD CONSTRAINT uq_workflow_forms_key_task UNIQUE ("processDefinitionKey", "taskDefinitionKey");
-
--- 4. Asegurar workflow_processes
-CREATE TABLE IF NOT EXISTS workflow_processes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  key VARCHAR(150) NOT NULL UNIQUE,
-  name VARCHAR(200) NOT NULL,
-  description TEXT,
-  "processDefinitionKey" VARCHAR(150) NOT NULL,
-  "startFormSchema" JSONB NOT NULL DEFAULT '{"type":"object","properties":{},"additionalProperties":false}'::jsonb,
-  active BOOLEAN NOT NULL DEFAULT FALSE,
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 5. Asegurar workflow_task_assignments
+-- =============================================================================
+-- 7. TABLA: workflow_task_assignments (Asignación de tareas a grupos/usuarios)
+-- =============================================================================
 CREATE TABLE IF NOT EXISTS workflow_task_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "processDefinitionKey" VARCHAR(150) NOT NULL,
@@ -58,13 +111,66 @@ CREATE TABLE IF NOT EXISTS workflow_task_assignments (
     UNIQUE ("processDefinitionKey", "taskDefinitionKey")
 );
 
--- 6. Insertar proceso PR-GAF-08
+CREATE INDEX IF NOT EXISTS ix_workflow_task_assignments_process
+  ON workflow_task_assignments("processDefinitionKey");
+
+-- =============================================================================
+-- 8. TABLAS: workflow_actions y workflow_action_executions (Acciones de tarea)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS workflow_actions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "processDefinitionId" VARCHAR(150) NOT NULL,
+  "taskDefinitionKey" VARCHAR(150) NOT NULL,
+  code VARCHAR(100) NOT NULL,
+  label VARCHAR(150) NOT NULL,
+  variables JSONB NOT NULL DEFAULT '{}'::jsonb,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  "businessStatus" VARCHAR(100),
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_workflow_action_definition_task_code
+    UNIQUE ("processDefinitionId", "taskDefinitionKey", code)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_action_executions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "taskId" VARCHAR(150) NOT NULL UNIQUE,
+  "actionId" UUID NOT NULL REFERENCES workflow_actions(id),
+  "processInstanceId" VARCHAR(150) NOT NULL,
+  "executedBy" VARCHAR(150) NOT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'PENDING'
+    CHECK (
+      status IN (
+        'PENDING',
+        'ENGINE_COMPLETED',
+        'SYNCED',
+        'RECONCILIATION_REQUIRED'
+      )
+    ),
+  "businessStatus" VARCHAR(100),
+  "errorMessage" TEXT,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_workflow_execution_status
+  ON workflow_action_executions(status);
+
+CREATE INDEX IF NOT EXISTS ix_workflow_execution_process
+  ON workflow_action_executions("processInstanceId");
+
+-- =============================================================================
+-- 9. DATOS SEMILLA: Proceso PR-GAF-08 (ENDE ANDINA S.A.M.)
+-- =============================================================================
 INSERT INTO workflow_processes (
   id,
   key,
   name,
   description,
   "processDefinitionKey",
+  "codePrefix",
+  "correlativeFormat",
   "startFormSchema",
   active
 ) VALUES (
@@ -73,6 +179,8 @@ INSERT INTO workflow_processes (
   'PR-GAF-08 Flujo de Aprobaciones de Adquisiciones',
   'ENDE ANDINA S.A.M. - Estados, responsables y notificaciones por categoría de materialidad.',
   'prGaf08Adquisiciones',
+  'ADQ',
+  '{prefix}-{number:3}/{year}',
   '{
     "type": "object",
     "required": ["objetoContratacion", "categoria", "montoEstimadoBs", "tipoAdquisicion", "adjuntoET_TDR", "adjuntoCotizacion"],
@@ -122,11 +230,16 @@ INSERT INTO workflow_processes (
 ON CONFLICT (key) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
+  "codePrefix" = EXCLUDED."codePrefix",
+  "correlativeFormat" = EXCLUDED."correlativeFormat",
   "startFormSchema" = EXCLUDED."startFormSchema",
   active = EXCLUDED.active;
 
--- 7. Insertar formularios dinámicos por tarea
--- 7.1 Verificación de Existencias / Activos
+-- =============================================================================
+-- 10. DATOS SEMILLA: Formularios Dinámicos por Tarea (PR-GAF-08)
+-- =============================================================================
+
+-- 10.1 Verificación de Existencias / Activos
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -148,16 +261,23 @@ VALUES (
       },
       "obsAlmacenes": {
         "type": "string",
-        "title": "Informe Técnico / Observaciones de Almacenes"
+        "title": "Informe Técnico / Observaciones de Almacenes",
+        "format": "textarea"
+      },
+      "informeAlmacen": {
+        "type": "string",
+        "title": "Certificado de No Existencias (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.2 Verificación de Presupuesto
+-- 10.2 Verificación de Presupuesto
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -166,11 +286,20 @@ VALUES (
   'Confirmar disponibilidad presupuestaria y partida contable correspondiente.',
   '{
     "type": "object",
-    "required": ["partidaPresupuestaria", "aprobadoPresupuesto", "obsPresupuesto"],
+    "required": ["partidaPresupuestaria", "montoEstimadoBs", "aprobadoPresupuesto", "obsPresupuesto"],
     "properties": {
       "partidaPresupuestaria": {
         "type": "string",
         "title": "Número / Código de Partida Presupuestaria"
+      },
+      "montoEstimadoBs": {
+        "type": "number",
+        "title": "Monto Estimado Certificado (Bs.)",
+        "minimum": 0.01
+      },
+      "preventivo": {
+        "type": "string",
+        "title": "Nº de Certificación Preventiva"
       },
       "aprobadoPresupuesto": {
         "type": "boolean",
@@ -178,16 +307,18 @@ VALUES (
       },
       "obsPresupuesto": {
         "type": "string",
-        "title": "Observaciones / Certificación Presupuestaria"
+        "title": "Observaciones / Certificación Presupuestaria",
+        "format": "textarea"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.2.1 Subsanación y Ajuste de Solicitud (Unidad Solicitante / Initiator)
+-- 10.3 Subsanación y Ajuste de Solicitud (Unidad Solicitante)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -210,21 +341,23 @@ VALUES (
       },
       "justificacionAjuste": {
         "type": "string",
-        "title": "Detalle de modificaciones o subsanaciones realizadas"
+        "title": "Detalle de modificaciones o subsanaciones realizadas",
+        "format": "textarea"
       },
       "documentoAjustado": {
         "type": "string",
-        "title": "ET, TDR o Cotización Subsanada (PDF / Enlace)",
-        "description": "Adjunto actualizado si corresponde"
+        "title": "ET, TDR o Cotización Subsanada (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.3 Asignación de Encargado de Contratación
+-- 10.4 Asignación de Encargado de Contratación
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -241,16 +374,18 @@ VALUES (
       },
       "instruccionesAsignacion": {
         "type": "string",
-        "title": "Instrucciones de la Jefatura de Adquisiciones"
+        "title": "Instrucciones de la Jefatura de Adquisiciones",
+        "format": "textarea"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.4 Revisión Solicitud de Adquisición
+-- 10.5 Revisión Solicitud de Adquisición
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -264,7 +399,12 @@ VALUES (
       "tipoAdquisicionDefinitivo": {
         "type": "string",
         "title": "Confirmación de Tipo",
-        "enum": ["BIEN", "SERVICIO"]
+        "enum": ["BIEN", "SERVICIO", "CONSULTORIA"],
+        "enumNames": [
+          "Bien / Material / Activo",
+          "Servicio General",
+          "Consultoría Especializada"
+        ]
       },
       "documentosCompletos": {
         "type": "boolean",
@@ -272,16 +412,23 @@ VALUES (
       },
       "observacionesRevision": {
         "type": "string",
-        "title": "Informe de Revisión Documental"
+        "title": "Informe de Revisión Documental",
+        "format": "textarea"
+      },
+      "documentosPdfFirmados": {
+        "type": "string",
+        "title": "Expediente Documental Revisado (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.5 Aprobación Inmediato Superior
+-- 10.6 Aprobación Inmediato Superior
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -298,16 +445,18 @@ VALUES (
       },
       "obsSuperior": {
         "type": "string",
-        "title": "Comentarios / Fundamento de Aprobación o Rechazo"
+        "title": "Comentarios / Fundamento de Aprobación o Rechazo",
+        "format": "textarea"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.6 Aprobación GAF (Categoría I)
+-- 10.7 Aprobación GAF (Categoría I)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -324,16 +473,18 @@ VALUES (
       },
       "obsGaf": {
         "type": "string",
-        "title": "Observaciones GAF"
+        "title": "Observaciones GAF",
+        "format": "textarea"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.7 Decisión Final (Cat. I - Gerente de Área)
+-- 10.8 Decisión Final (Cat. I - Gerente de Área)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -357,16 +508,23 @@ VALUES (
       "justificacion": {
         "type": "string",
         "title": "Fundamentación y Justificación de la Decisión",
+        "format": "textarea",
         "minLength": 5
+      },
+      "actaAprobacion": {
+        "type": "string",
+        "title": "Resolución de Adjudicación / Autorización Firmada (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.8 VoBo Financiero (Cat. II / III - Jefe Administrativo Financiero)
+-- 10.9 VoBo Financiero (Cat. II / III - Jefe Administrativo Financiero)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -379,20 +537,27 @@ VALUES (
     "properties": {
       "aprobadoFinanciero": {
         "type": "boolean",
-        "title": "VoBo Administrativo Financiero Otorgado"
+        "title": "¿Otorga el VoBo Administrativo Financiero para la contratación?"
       },
       "obsFinanciero": {
         "type": "string",
-        "title": "Informe / Detalle Financiero"
+        "title": "Informe / Detalle y Dictamen Financiero",
+        "format": "textarea"
+      },
+      "informeFinanciero": {
+        "type": "string",
+        "title": "Informe Financiero Adjunto (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.9 VoBo Legal (Cat. II / III - Jefe Legal)
+-- 10.10 VoBo Legal (Cat. II / III - Jefe Legal)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -405,20 +570,27 @@ VALUES (
     "properties": {
       "aprobadoLegal": {
         "type": "boolean",
-        "title": "VoBo Legal Otorgado"
+        "title": "¿Otorga el VoBo Legal conforme para la contratación?"
       },
       "obsLegal": {
         "type": "string",
-        "title": "Informe / Dictamen Legal"
+        "title": "Dictamen / Informe Legal de Procedencia",
+        "format": "textarea"
+      },
+      "informeLegal": {
+        "type": "string",
+        "title": "Dictamen Jurídico Firmado (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.10 Aprobación GAF y Designación de Comités (Cat. II / III)
+-- 10.11 Aprobación GAF y Designación de Comités (Cat. II / III)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -443,18 +615,25 @@ VALUES (
         "title": "Responsable de Recepción Designado",
         "description": "Nombre y cargo del responsable"
       },
+      "memorandoDesignacion": {
+        "type": "string",
+        "title": "Memorando de Designación Oficial Firmado (PDF)",
+        "format": "binary"
+      },
       "obsGaf": {
         "type": "string",
-        "title": "Observaciones / Instrucciones de GAF"
+        "title": "Observaciones / Instrucciones de GAF",
+        "format": "textarea"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 7.11 Decisión Final (Cat. II / III / Especial - Gerente General)
+-- 10.12 Decisión Final (Cat. II / III / Especial - Gerente General)
 INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
 VALUES (
   'prGaf08Adquisiciones',
@@ -478,16 +657,59 @@ VALUES (
       "justificacion": {
         "type": "string",
         "title": "Fundamentación y Justificación de la Decisión",
+        "format": "textarea",
         "minLength": 5
+      },
+      "resolucionFirmada": {
+        "type": "string",
+        "title": "Resolución de Gerencia General Firmada (PDF)",
+        "format": "binary"
       }
     }
   }'::jsonb,
   true
 ) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   title = EXCLUDED.title,
+  description = EXCLUDED.description,
   schema = EXCLUDED.schema;
 
--- 8. Asignación de Tareas a Grupos de Keycloak
+-- 10.13 Informes de Cierre y Cancelación (cuando es Rechazado)
+INSERT INTO workflow_forms ("processDefinitionKey", "taskDefinitionKey", title, description, schema, active)
+VALUES (
+  'prGaf08Adquisiciones',
+  'taskInformesCierre',
+  'Adjuntar Informes Técnico y Legal de Cancelación y Archivo',
+  'Subir informes motivados requeridos por normativa antes del cierre y archivo definitivo.',
+  '{
+    "type": "object",
+    "required": ["adjuntoInformeTecnico", "adjuntoInformeLegal", "conclusionesCierre"],
+    "properties": {
+      "adjuntoInformeTecnico": {
+        "type": "string",
+        "title": "Informe Técnico de Justificación de Rechazo / Cancelación (PDF)",
+        "format": "binary"
+      },
+      "adjuntoInformeLegal": {
+        "type": "string",
+        "title": "Informe Legal de Soporte para Archivo (PDF)",
+        "format": "binary"
+      },
+      "conclusionesCierre": {
+        "type": "string",
+        "title": "Conclusiones y Constancia de Archivo Definitivo",
+        "format": "textarea"
+      }
+    }
+  }'::jsonb,
+  true
+) ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
+  title = EXCLUDED.title,
+  description = EXCLUDED.description,
+  schema = EXCLUDED.schema;
+
+-- =============================================================================
+-- 11. DATOS SEMILLA: Asignación de Tareas a Grupos de Keycloak (PR-GAF-08)
+-- =============================================================================
 INSERT INTO workflow_task_assignments ("processDefinitionKey", "taskDefinitionKey", "taskName", "candidateGroups", "candidateUsers", active)
 VALUES
   ('prGaf08Adquisiciones', 'taskVerificarExistencias', 'Verificación de existencias / activos', '["encargado-almacenes"]'::jsonb, '[]'::jsonb, true),
@@ -501,11 +723,12 @@ VALUES
   ('prGaf08Adquisiciones', 'taskVoboFinanciero', 'Visto bueno financiero', '["jefe-administrativo-financiero"]'::jsonb, '[]'::jsonb, true),
   ('prGaf08Adquisiciones', 'taskVoboLegal', 'Visto bueno legal', '["jefe-legal"]'::jsonb, '[]'::jsonb, true),
   ('prGaf08Adquisiciones', 'taskGafCat2', 'Aprobación y Designación Comités (GAF)', '["gerencia-administrativa-financiera"]'::jsonb, '[]'::jsonb, true),
-  ('prGaf08Adquisiciones', 'taskDecisionFinalCat2', 'Decisión final (Gerente General)', '["gerente-general"]'::jsonb, '[]'::jsonb, true)
+  ('prGaf08Adquisiciones', 'taskDecisionFinalCat2', 'Decisión final (Gerente General)', '["gerente-general"]'::jsonb, '[]'::jsonb, true),
+  ('prGaf08Adquisiciones', 'taskInformesCierre', 'Adjuntar Informes Técnico y Legal de Cancelación', '["adquisiciones", "jefe-adquisiciones"]'::jsonb, '[]'::jsonb, true)
 ON CONFLICT ("processDefinitionKey", "taskDefinitionKey") DO UPDATE SET
   "taskName" = EXCLUDED."taskName",
   "candidateGroups" = EXCLUDED."candidateGroups",
   active = EXCLUDED.active;
 
--- 9. Confirmar transacción
 COMMIT;
+

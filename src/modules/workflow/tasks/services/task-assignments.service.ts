@@ -64,6 +64,7 @@ export class TaskAssignmentsService implements OnModuleInit {
             UNIQUE ("processDefinitionKey", "taskDefinitionKey")
         );
       `);
+      await this.seedDefaultAssignments();
     } catch (error) {
       this.logger.warn(
         `No se pudo verificar/crear tabla workflow_task_assignments automáticamente: ${String(error)}`,
@@ -72,6 +73,110 @@ export class TaskAssignmentsService implements OnModuleInit {
 
     // Auto-asignar tareas huérfanas/pendientes existentes en Flowable que ya tengan responsable configurado
     await this.autoAssignConfiguredTasks().catch(() => undefined);
+  }
+
+  private async seedDefaultAssignments(): Promise<void> {
+    const defaults: Array<{
+      processDefinitionKey: string;
+      taskDefinitionKey: string;
+      taskName: string;
+      candidateGroups: string[];
+    }> = [
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskVerificarExistencias',
+        taskName: 'Verificación de existencias / activos',
+        candidateGroups: ['encargado-almacenes'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskVerificarPresupuesto',
+        taskName: 'Verificación de presupuesto',
+        candidateGroups: ['encargado-presupuestos'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskAjustarSolicitud',
+        taskName: 'Subsanación / Ajuste de Solicitud',
+        candidateGroups: ['unidad-solicitante'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskAsignarEncargado',
+        taskName: 'Asignación Encargado de Adquisiciones',
+        candidateGroups: ['jefe-adquisiciones'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskRevisarSolicitud',
+        taskName: 'Revisión solicitud de adquisición',
+        candidateGroups: [],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskAprobacionSuperior',
+        taskName: 'Aprobación Inmediato Superior',
+        candidateGroups: ['jefe-inmediato-superior'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskGafCat1',
+        taskName: 'Aprobación GAF (Cat I)',
+        candidateGroups: ['gerencia-administrativa-financiera'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskDecisionFinalCat1',
+        taskName: 'Decisión final (Gerente de Área)',
+        candidateGroups: ['gerente-area'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskVoboFinanciero',
+        taskName: 'Visto bueno financiero',
+        candidateGroups: ['jefe-administrativo-financiero'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskVoboLegal',
+        taskName: 'Visto bueno legal',
+        candidateGroups: ['jefe-legal'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskGafCat2',
+        taskName: 'Aprobación y Designación Comités (GAF)',
+        candidateGroups: ['gerencia-administrativa-financiera'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskDecisionFinalCat2',
+        taskName: 'Decisión final (Gerente General)',
+        candidateGroups: ['gerente-general'],
+      },
+      {
+        processDefinitionKey: 'prGaf08Adquisiciones',
+        taskDefinitionKey: 'taskInformesCierre',
+        taskName: 'Adjuntar Informes Técnico y Legal de Cancelación',
+        candidateGroups: ['adquisiciones', 'jefe-adquisiciones'],
+      },
+    ];
+
+    for (const item of defaults) {
+      const exists = await this.findByProcessAndTask(
+        item.processDefinitionKey,
+        item.taskDefinitionKey,
+      );
+      if (!exists) {
+        await this.repository.save(
+          this.repository.create({
+            ...item,
+            candidateUsers: [],
+            active: true,
+          }),
+        );
+      }
+    }
   }
 
   async findAll(processDefinitionKey?: string): Promise<WorkflowTaskAssignment[]> {

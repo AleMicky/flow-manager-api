@@ -16,6 +16,7 @@ services:
 
     volumes:
       - dba-flow-postgres-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
       test:
